@@ -1,0 +1,21 @@
+just_build:
+  image: docker:git
+  stage: build
+  services:
+    - docker:dind
+  script:
+    - docker build --target build -t builder .
+  except:
+    - master
+
+build_and_deploy:
+  image: docker:git
+  stage: deploy
+  services:
+    - docker:dind
+  script:
+    - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN registry.gitlab.com
+    - docker build -t registry.gitlab.com/georgehahn/firefly-plaid-connector:latest .
+    - docker push registry.gitlab.com/georgehahn/firefly-plaid-connector:latest
+  only:
+    - master
