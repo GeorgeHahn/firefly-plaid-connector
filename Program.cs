@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
@@ -192,126 +192,145 @@ namespace firefly_plaid_connector
             // TODO: Update FF3 account balances?
 
             // Get all txns for every account
-            var plaidtxns = new List<Acklann.Plaid.Entity.Transaction>();
-            foreach (var item in config.sync)
+
+            using (var datedb = new ImportDbContext())
             {
-                if (item.plaid_access_token == null)
+                var plaidtxns = new List<Acklann.Plaid.Entity.Transaction>();
+                foreach (var item in config.sync)
                 {
-                    // Don't try to sync accounts that don't have an access token
-                    continue;
+                    if (item.plaid_access_token == null)
+                    {
+                        // Don't try to sync accounts that don't have an access token
+                        continue;
+                    }
+
+                    var lastpoll = datedb.Poll.Where(p => p.PlaidId == item.plaid_account_id).FirstOrDefault();
+                    if (lastpoll == null) {
+                        lastpoll = new LastPoll();
+                        lastpoll.PlaidId = item.plaid_account_id;
+                        lastpoll.Time = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
+                    }
+
+                    // TODO future: this step can be done in parallel
+                    var plaid_txn_rsp = await this.plaid.FetchTransactionsAsync(new Acklann.Plaid.Transactions.GetTransactionsRequest
+                    {
+                        StartDate = lastpoll.Time,
+                        EndDate = DateTime.Now,
+                        AccessToken = item.plaid_access_token,
+                    });
+                    plaidtxns.AddRange(plaid_txn_rsp.Transactions);
+
+                    // These updates will be saved at the end of the sync process
+                    lastpoll.Time = DateTime.Now;
+                    datedb.Poll.Update(lastpoll);
                 }
 
-                // TODO: Only ask for transactions since the last poll on this account (save this info in the db)
-                // TODO future: this step can be done in parallel
-                var plaid_txn_rsp = await this.plaid.FetchTransactionsAsync(new Acklann.Plaid.Transactions.GetTransactionsRequest
+                // Process all txns
+                using (var db = new ImportDbContext())
                 {
-                    AccessToken = item.plaid_access_token,
-                });
-                plaidtxns.AddRange(plaid_txn_rsp.Transactions);
-            }
-
-            // Process all txns
-            using (var db = new ImportDbContext())
-            {
-                foreach (var txn in plaidtxns)
-                {
-                    // See if we have already processed this transaction
-                    if (db.Transactions.Any(b => b.PlaidId == txn.TransactionId))
+                    foreach (var txn in plaidtxns)
                     {
-                        // Already processed; skip
-                        continue;
-                    }
-
-                    // Handle transfers between accounts
-                    if (txn.CategoryId == "21005000" || // transfer - credit
-                        txn.CategoryId == "21006000" || // transfer - debit
-                        txn.CategoryId == "16001000" || // payment - credit card
-                        txn.CategoryId == "21009000")   // some amex are miscategorized as transfer - payroll
-                    {
-                        // Attempt to collect Transfer/Debit & Transfer/Credit pair into a single FF3 transfer transaction
-                        var other = plaidtxns.FirstOrDefault(t =>
-                            t.Amount == -1 * txn.Amount &&
-                            (t.Date - txn.Date < TimeSpan.FromDays(7)) && // less than a week apart
-                            t.CurrencyCode == txn.CurrencyCode &&
-                            ((t.CategoryId == "21005000" && txn.CategoryId == "21006000") ||
-                            (t.CategoryId == "21006000" && txn.CategoryId == "21005000") ||
-                            (t.CategoryId == "16001000" && txn.CategoryId == "21009000") ||
-                            (t.CategoryId == "21009000" && txn.CategoryId == "16001000"))
-                        );
-
-                        if (other != null)
+                        // See if we have already processed this transaction
+                        if (db.Transactions.Any(b => b.PlaidId == txn.TransactionId))
                         {
-                            // Found a matching txn
-                            Console.WriteLine("Found matching txn pair");
-                            transfer_between_two_plaid_accounts(txn, other);
+                            // Already processed; skip
                             continue;
                         }
-                    }
 
-                    // Match hardcoded names (TODO: this can probably be done just as well with a FF3 rule. Test & remove.)
-                    // TODO: Consider allowing fuzzy matches?
-                    var match = config.sync.FirstOrDefault(a => a.match_transaction?.transaction_name == txn.Name &&
-                        a.match_transaction?.category_id == txn.CategoryId);
-                    if (match != null)
-                    {
-                        Console.WriteLine("Creating transfer to account with matched transaction name");
-                        transfer_between_plaid_and_ff3_account(txn, match);
-                        continue;
-                    }
+                        // Handle transfers between accounts
+                        if (txn.CategoryId == "21005000" || // transfer - credit
+                            txn.CategoryId == "21006000" || // transfer - debit
+                            txn.CategoryId == "16001000" || // payment - credit card
+                            txn.CategoryId == "21009000")   // some amex are miscategorized as transfer - payroll
+                        {
+                            // Attempt to collect Transfer/Debit & Transfer/Credit pair into a single FF3 transfer transaction
+                            var other = plaidtxns.FirstOrDefault(t =>
+                                t.Amount == -1 * txn.Amount &&
+                                (t.Date - txn.Date < TimeSpan.FromDays(7)) && // less than a week apart
+                                t.CurrencyCode == txn.CurrencyCode &&
+                                ((t.CategoryId == "21005000" && txn.CategoryId == "21006000") ||
+                                (t.CategoryId == "21006000" && txn.CategoryId == "21005000") ||
+                                (t.CategoryId == "16001000" && txn.CategoryId == "21009000") ||
+                                (t.CategoryId == "21009000" && txn.CategoryId == "16001000"))
+                            );
 
-                    // Did not find a matching txn: create single sided FF3 transaction
-                    Console.WriteLine("Creating single sided transaction");
+                            if (other != null)
+                            {
+                                // Found a matching txn
+                                Console.WriteLine("Found matching txn pair");
+                                transfer_between_two_plaid_accounts(txn, other);
+                                continue;
+                            }
+                        }
 
-                    var txn_config = config.sync.FirstOrDefault(a => a.plaid_account_id == txn.AccountId);
-                    if (txn_config == null)
-                    {
-                        Console.WriteLine($"Dropping transaction; account not configured for sync: {txn.AccountId}");
+                        // Match hardcoded names (TODO: this can probably be done just as well with a FF3 rule. Test & remove.)
+                        // TODO: Consider allowing fuzzy matches?
+                        var match = config.sync.FirstOrDefault(a => a.match_transaction?.transaction_name == txn.Name &&
+                            a.match_transaction?.category_id == txn.CategoryId);
+                        if (match != null)
+                        {
+                            Console.WriteLine("Creating transfer to account with matched transaction name");
+                            transfer_between_plaid_and_ff3_account(txn, match);
+                            continue;
+                        }
+
+                        // Did not find a matching txn: create single sided FF3 transaction
+                        Console.WriteLine("Creating single sided transaction");
+
+                        var txn_config = config.sync.FirstOrDefault(a => a.plaid_account_id == txn.AccountId);
+                        if (txn_config == null)
+                        {
+                            Console.WriteLine($"Dropping transaction; account not configured for sync: {txn.AccountId}");
+
+                            // Record transaction as imported
+                            db.Transactions.Add(new ImportedTransaction
+                            {
+                                PlaidId = txn.TransactionId,
+                                FireflyId = null,
+                            });
+                            db.SaveChanges();
+                            continue;
+                        }
+
+                        var is_source = txn.Amount > 0;
+
+                        var name = txn.Name;
+                        // TODO: fill name with PaymentInfo if non-null
+
+                        var transfer = new FireflyIII.Net.Model.TransactionSplit
+                        {
+                            Date = txn.Date,
+                            Description = txn.Name,
+                            Amount = Math.Abs(txn.Amount),
+                            CurrencyCode = txn.CurrencyCode,
+                            ExternalId = txn.TransactionId,
+                            Tags = txn.Categories?.ToList(),
+                        };
+
+                        if(is_source) {
+                            transfer.Type = TransactionSplit.TypeEnum.Withdrawal;
+                            transfer.SourceId = txn_config.firefly_account_id;
+                            transfer.DestinationName = name;
+                        } else {
+                            transfer.Type = TransactionSplit.TypeEnum.Deposit;
+                            transfer.SourceName = name;
+                            transfer.DestinationId = txn_config.firefly_account_id;
+                        }
+
+                        var storedtransfer = firefly.StoreTransaction(new FireflyIII.Net.Model.Transaction(new[] { transfer }.ToList()));
 
                         // Record transaction as imported
                         db.Transactions.Add(new ImportedTransaction
                         {
                             PlaidId = txn.TransactionId,
-                            FireflyId = null,
+                            FireflyId = storedtransfer.Data.Id,
                         });
                         db.SaveChanges();
-                        continue;
                     }
-
-                    var is_source = txn.Amount > 0;
-
-                    var name = txn.Name;
-                    // TODO: fill name with PaymentInfo if non-null
-
-                    var transfer = new FireflyIII.Net.Model.TransactionSplit
-                    {
-                        Date = txn.Date,
-                        Description = txn.Name,
-                        Amount = Math.Abs(txn.Amount),
-                        CurrencyCode = txn.CurrencyCode,
-                        ExternalId = txn.TransactionId,
-                        Tags = txn.Categories?.ToList(),
-                    };
-
-                    if(is_source) {
-                        transfer.Type = TransactionSplit.TypeEnum.Withdrawal;
-                        transfer.SourceId = txn_config.firefly_account_id;
-                        transfer.DestinationName = name;
-                    } else {
-                        transfer.Type = TransactionSplit.TypeEnum.Deposit;
-                        transfer.SourceName = name;
-                        transfer.DestinationId = txn_config.firefly_account_id;
-                    }
-
-                    var storedtransfer = firefly.StoreTransaction(new FireflyIII.Net.Model.Transaction(new[] { transfer }.ToList()));
-
-                    // Record transaction as imported
-                    db.Transactions.Add(new ImportedTransaction
-                    {
-                        PlaidId = txn.TransactionId,
-                        FireflyId = storedtransfer.Data.Id,
-                    });
-                    db.SaveChanges();
                 }
+
+                // save last-polled at the very end
+                datedb.SaveChanges();
             }
         }
 
