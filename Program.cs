@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
@@ -30,12 +30,80 @@ namespace firefly_plaid_connector
                 config.plaid.client_id,
                 config.plaid.secret,
                 config.plaid.pubkey,
-                Acklann.Plaid.Environment.Sandbox); // TODO: Swap to development environment
+                Acklann.Plaid.Environment.Development);
             this.firefly = new TransactionsApi(new FireflyIII.Net.Client.Configuration()
             {
                 BasePath = config.firefly.Url,
                 AccessToken = config.firefly.Token,
             });
+        }
+
+        public async Task InitializeAccountData()
+        {
+            foreach (var token in config.plaid.access_tokens)
+            {
+                // Try to get full (bank) account numbers for better records
+                Acklann.Plaid.Entity.Account[] accounts = null;
+                string itemid = null;
+                var fullinfo = await this.plaid.FetchAccountInfoAsync(new Acklann.Plaid.Auth.GetAccountInfoRequest()
+                {
+                    AccessToken = token,
+                });
+
+                if (fullinfo.IsSuccessStatusCode) {
+                    accounts = fullinfo.Accounts;
+                    itemid = fullinfo.Item.Id;
+                } else {
+                    var accts = await this.plaid.FetchAccountAsync(new Acklann.Plaid.Balance.GetAccountRequest()
+                    {
+                        AccessToken = token,
+                    });
+
+                    if (!accts.IsSuccessStatusCode) {
+                        throw new Exception("Failed to get account info");
+                    }
+                    accounts = accts.Accounts;
+                    itemid = accts.Item.Id;
+                }
+
+                foreach (var acct in accounts)
+                {
+                    var cfg = config.sync.FirstOrDefault(a =>
+                        // Match to as much account info as is given
+
+                        (a.plaid_account_id != null || a.account_name != null || a.account_officialname != null ||
+                            a.account_lastfour != null || a.account_institution_id != null) &&
+                        (a.plaid_account_id == null || a.plaid_account_id == acct.Id) &&
+                        (a.account_name == null || (a.account_name == acct.Name || a.account_name == acct.OfficialName)) &&
+                        (a.account_officialname == null || a.account_name == acct.OfficialName) &&
+                        (a.account_lastfour == null || a.account_lastfour == acct.Mask) &&
+                        (a.account_institution_id == null || a.account_institution_id == acct.InstitutionId)
+                    );
+
+                    if (cfg == null)
+                    {
+                        Console.WriteLine($"Warning: plaid reported an unknown account: {acct.Name} {acct.OfficialName}");
+                    }
+                    else
+                    {
+                        cfg.account_officialname = acct.OfficialName;
+                        cfg.account_name = acct.Name;
+                        cfg.plaid_access_token = token;
+                        cfg.plaid_item_id = itemid;
+                        cfg.plaid_account_id = acct.Id;
+                        cfg.account_lastfour = acct.Mask;
+
+                        if (fullinfo.IsSuccessStatusCode) {
+                            cfg.account_number = fullinfo.Numbers.ACH
+                                                    .Where(a => a.AccountId == acct.Id)
+                                                    .Select(a => a.AccountNumber)
+                                                    .FirstOrDefault();
+                        }
+                    }
+                }
+
+                plaid_accounts.AddRange(accounts);
+            }
         }
 
         private void transfer_between_two_plaid_accounts(Acklann.Plaid.Entity.Transaction txn, Acklann.Plaid.Entity.Transaction other)
@@ -52,16 +120,18 @@ namespace firefly_plaid_connector
                     throw new Exception($"Account not found in config: {source.AccountId} or {dest.AccountId}");
                 }
 
+                // TODO: shrink txn names? (too verbose: "Requested transfer from... account XXXXXX0123 -> Incoming transfer from ...")
                 var transfer = new FireflyIII.Net.Model.TransactionSplit
                 {
                     Date = source.Date,
+                    Notes = "Received on " + dest.Date,
                     Description = source.Name + " -> " + dest.Name,
                     Amount = source.Amount,
                     CurrencyCode = source.CurrencyCode,
                     ExternalId = source.TransactionId + " -> " + dest.TransactionId,
                     Type = TransactionSplit.TypeEnum.Transfer,
-                    SourceId = source_config.firefly_account,
-                    DestinationId = dest_config.firefly_account,
+                    SourceId = source_config.firefly_account_id,
+                    DestinationId = dest_config.firefly_account_id,
                 };
                 var storedtransfer = firefly.StoreTransaction(new FireflyIII.Net.Model.Transaction(new[] { transfer }.ToList()));
 
@@ -101,8 +171,9 @@ namespace firefly_plaid_connector
                     CurrencyCode = txn.CurrencyCode,
                     ExternalId = txn.TransactionId,
                     Type = TransactionSplit.TypeEnum.Transfer,
-                    SourceId = is_source ? txn_config.firefly_account : other.firefly_account,
-                    DestinationId = !is_source ? txn_config.firefly_account : other.firefly_account,
+                    SourceId = is_source ? txn_config.firefly_account_id : other.firefly_account_id,
+                    DestinationId = !is_source ? txn_config.firefly_account_id : other.firefly_account_id,
+                    Tags = txn.Categories.ToList(),
                 };
                 var storedtransfer = firefly.StoreTransaction(new FireflyIII.Net.Model.Transaction(new[] { transfer }.ToList()));
 
@@ -113,48 +184,6 @@ namespace firefly_plaid_connector
                     FireflyId = storedtransfer.Data.Id,
                 });
                 db.SaveChanges();
-            }
-        }
-
-        public async Task InitializeAccountData()
-        {
-            foreach (var token in config.plaid.access_tokens)
-            {
-                var accts = await this.plaid.FetchAccountInfoAsync(new Acklann.Plaid.Auth.GetAccountInfoRequest()
-                {
-                    AccessToken = token,
-                });
-
-                foreach (var acct in accts.Accounts)
-                {
-                    var cfg = config.sync.FirstOrDefault(a =>
-                        // Match to as much account info as is given
-
-                        (a.plaid_account_id != null || a.account_name != null || a.account_officialname != null ||
-                            a.account_lastfour != null || a.account_institution_id != null) &&
-                        (a.plaid_account_id == null || a.plaid_account_id == acct.Id) &&
-                        (a.account_name == null || (a.account_name == acct.Name || a.account_name == acct.OfficialName)) &&
-                        (a.account_officialname == null || a.account_name == acct.OfficialName) &&
-                        (a.account_lastfour == null || a.account_lastfour == acct.Mask) &&
-                        (a.account_institution_id == null || a.account_institution_id == acct.InstitutionId)
-                    );
-
-                    if (cfg == null)
-                    {
-                        Console.WriteLine($"Warning: plaid reported an unknown account: {acct.Name} {acct.OfficialName}");
-                    }
-                    else
-                    {
-                        cfg.account_officialname = acct.OfficialName;
-                        cfg.account_name = acct.Name;
-                        cfg.plaid_access_token = token;
-                        cfg.plaid_item_id = accts.Item.Id;
-                        cfg.plaid_account_id = acct.Id;
-                        cfg.account_lastfour = acct.Mask;
-                    }
-                }
-
-                plaid_accounts.AddRange(accts.Accounts);
             }
         }
 
@@ -194,15 +223,20 @@ namespace firefly_plaid_connector
                     }
 
                     // Handle transfers between accounts
-                    if (txn.CategoryId == "21005000" || txn.CategoryId == "21006000")
+                    if (txn.CategoryId == "21005000" || // transfer - credit
+                        txn.CategoryId == "21006000" || // transfer - debit
+                        txn.CategoryId == "16001000" || // payment - credit card
+                        txn.CategoryId == "21009000")   // some amex are miscategorized as transfer - payroll
                     {
                         // Attempt to collect Transfer/Debit & Transfer/Credit pair into a single FF3 transfer transaction
                         var other = plaidtxns.FirstOrDefault(t =>
                             t.Amount == -1 * txn.Amount &&
-                            t.Date == txn.Date &&
+                            (t.Date - txn.Date < TimeSpan.FromDays(7)) && // less than a week apart
                             t.CurrencyCode == txn.CurrencyCode &&
                             ((t.CategoryId == "21005000" && txn.CategoryId == "21006000") ||
-                            (t.CategoryId == "21006000" && txn.CategoryId == "21005000"))
+                            (t.CategoryId == "21006000" && txn.CategoryId == "21005000") ||
+                            (t.CategoryId == "16001000" && txn.CategoryId == "21009000") ||
+                            (t.CategoryId == "21009000" && txn.CategoryId == "16001000"))
                         );
 
                         if (other != null)
@@ -214,7 +248,8 @@ namespace firefly_plaid_connector
                         }
                     }
 
-                    // TODO: Consider allowing fuzzy matches
+                    // Match hardcoded names (TODO: this can probably be done just as well with a FF3 rule. Test & remove.)
+                    // TODO: Consider allowing fuzzy matches?
                     var match = config.sync.FirstOrDefault(a => a.match_transaction?.transaction_name == txn.Name &&
                         a.match_transaction?.category_id == txn.CategoryId);
                     if (match != null)
@@ -224,24 +259,10 @@ namespace firefly_plaid_connector
                         continue;
                     }
 
-                    Console.WriteLine("Did not find a transfer match, creating withdrawal");
+                    // Did not find a matching txn: create single sided FF3 transaction
+                    Console.WriteLine("Creating single sided transaction");
 
-                    // TODO: try to fuzzy match against txn name ("Requested transfer from... account XXXXXX0123")
-                    // TODO: Handle other transfers
-                    //      21005000 expensify
-                    //      16001000 credit card payment
-                    // TODO: Handle other deposits
-                    //      21007001 check deposit
-                    //      21010001 venmo
-                    //      21010004 paypal
-                    //      15001000 interest earned
-                    //      21009000 payroll
-                    // TODO: Handle payments: 16000000 Zelle payment
-
-                    // Did not find a matching txn: create transfer to/from FF3 cash wallet
                     var txn_config = config.sync.FirstOrDefault(a => a.plaid_account_id == txn.AccountId);
-                    var cash_dest = config.firefly.cash_wallet_account_dest;
-                    var cash_src = config.firefly.cash_wallet_account_src;
                     if (txn_config == null)
                     {
                         Console.WriteLine($"Dropping transaction; account not configured for sync: {txn.AccountId}");
@@ -257,9 +278,9 @@ namespace firefly_plaid_connector
                     }
 
                     var is_source = txn.Amount > 0;
-                    var ff_source = is_source ? txn_config.firefly_account : cash_dest;
-                    var ff_dest = !is_source ? txn_config.firefly_account : cash_dest;
-                    var txn_type = is_source ? TransactionSplit.TypeEnum.Withdrawal : TransactionSplit.TypeEnum.Deposit;
+
+                    var name = txn.Name;
+                    // TODO: fill name with PaymentInfo if non-null
 
                     var transfer = new FireflyIII.Net.Model.TransactionSplit
                     {
@@ -268,10 +289,18 @@ namespace firefly_plaid_connector
                         Amount = Math.Abs(txn.Amount),
                         CurrencyCode = txn.CurrencyCode,
                         ExternalId = txn.TransactionId,
-                        Type = txn_type,
-                        SourceId = ff_source,
-                        DestinationId = ff_dest,
+                        Tags = txn.Categories?.ToList(),
                     };
+
+                    if(is_source) {
+                        transfer.Type = TransactionSplit.TypeEnum.Withdrawal;
+                        transfer.SourceId = txn_config.firefly_account_id;
+                        transfer.DestinationName = name;
+                    } else {
+                        transfer.Type = TransactionSplit.TypeEnum.Deposit;
+                        transfer.SourceName = name;
+                        transfer.DestinationId = txn_config.firefly_account_id;
+                    }
 
                     var storedtransfer = firefly.StoreTransaction(new FireflyIII.Net.Model.Transaction(new[] { transfer }.ToList()));
 
