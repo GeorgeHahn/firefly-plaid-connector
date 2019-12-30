@@ -123,8 +123,8 @@ namespace firefly_plaid_connector
                 // TODO: shrink txn names? (too verbose: "Requested transfer from... account XXXXXX0123 -> Incoming transfer from ...")
                 var transfer = new FireflyIII.Net.Model.TransactionSplit
                 {
-                    Date = dest.Date,
-                    PaymentDate = source.Date,
+                    Date = source.Date,
+                    ProcessDate = dest.Date,
                     Description = source.Name + " -> " + dest.Name,
                     Amount = source.Amount,
                     CurrencyCode = source.CurrencyCode,
@@ -218,7 +218,8 @@ namespace firefly_plaid_connector
                         EndDate = DateTime.Now,
                         AccessToken = item.plaid_access_token,
                     });
-                    plaidtxns.AddRange(plaid_txn_rsp.Transactions);
+                    var filter_pending = plaid_txn_rsp.Transactions.Where(t => t.Pending == false);
+                    plaidtxns.AddRange(filter_pending);
 
                     // These updates will be saved at the end of the sync process
                     lastpoll.Time = DateTime.Now;
