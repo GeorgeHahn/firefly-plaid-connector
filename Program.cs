@@ -123,8 +123,8 @@ namespace firefly_plaid_connector
                 // TODO: shrink txn names? (too verbose: "Requested transfer from... account XXXXXX0123 -> Incoming transfer from ...")
                 var transfer = new FireflyIII.Net.Model.TransactionSplit
                 {
-                    Date = source.Date,
-                    Notes = "Received on " + dest.Date,
+                    Date = dest.Date,
+                    PaymentDate = source.Date,
                     Description = source.Name + " -> " + dest.Name,
                     Amount = source.Amount,
                     CurrencyCode = source.CurrencyCode,
