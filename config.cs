@@ -24,12 +24,6 @@ namespace firefly_plaid_connector
         // TODO future: webhook triggered sync
     }
 
-    public class MatchTransaction
-    {
-        public string category_id { get; set; }
-        public string transaction_name { get; set; }
-    }
-
     public class Account
     {
         // Fill in one or more of these
@@ -45,9 +39,6 @@ namespace firefly_plaid_connector
         // One of these is required
         public int firefly_account_id { get; set; }
         public string firefly_account { get; set; }
-
-        /// This allows specific transactions to be mapped to FF3 accounts
-        public MatchTransaction match_transaction { get; set; }
 
         /// Automatically populated on startup
         public string plaid_item_id { get; set; }
@@ -74,10 +65,6 @@ namespace firefly_plaid_connector
             else if (this.account_institution_id != null)
             {
                 return this.account_institution_id;
-            }
-            else if (this.match_transaction != null)
-            {
-                return "Matches " + this.match_transaction.transaction_name + " in " + this.match_transaction.category_id;
             }
             return "no data";
         }

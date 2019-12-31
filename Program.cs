@@ -156,41 +156,6 @@ namespace firefly_plaid_connector
             }
         }
 
-        private void transfer_between_plaid_and_ff3_account(Acklann.Plaid.Entity.Transaction txn, firefly_plaid_connector.Account other)
-        {
-            using (var db = new ImportDbContext())
-            {
-                var is_source = txn.Amount > 0;
-                var txn_config = config.sync.FirstOrDefault(a => a.plaid_account_id == txn.AccountId);
-                if (txn_config == null)
-                {
-                    throw new Exception($"Account not found in config: {txn.AccountId}");
-                }
-
-                var transfer = new FireflyIII.Net.Model.TransactionSplit
-                {
-                    Date = txn.Date,
-                    Description = txn.Name,
-                    Amount = Math.Abs(txn.Amount),
-                    CurrencyCode = txn.CurrencyCode,
-                    ExternalId = txn.TransactionId,
-                    Type = TransactionSplit.TypeEnum.Transfer,
-                    SourceId = is_source ? txn_config.firefly_account_id : other.firefly_account_id,
-                    DestinationId = !is_source ? txn_config.firefly_account_id : other.firefly_account_id,
-                    Tags = txn.Categories.ToList(),
-                };
-                var storedtransfer = firefly.StoreTransaction(new FireflyIII.Net.Model.Transaction(new[] { transfer }.ToList()));
-
-                // Record transaction as imported
-                db.Transactions.Add(new ImportedTransaction
-                {
-                    PlaidId = txn.TransactionId,
-                    FireflyId = storedtransfer.Data.Id,
-                });
-                db.SaveChanges();
-            }
-        }
-
         public async Task SyncOnce()
         {
             // TODO: Update FF3 account balances?
@@ -291,17 +256,6 @@ namespace firefly_plaid_connector
                                 transfer_between_two_plaid_accounts(txn, other);
                                 continue;
                             }
-                        }
-
-                        // Match hardcoded names (this can be done just as well with a FF3 rule. Test & remove.)
-                        // TODO: Consider allowing fuzzy matches?
-                        var match = config.sync.FirstOrDefault(a => a.match_transaction?.transaction_name == txn.Name &&
-                            a.match_transaction?.category_id == txn.CategoryId);
-                        if (match != null)
-                        {
-                            Console.WriteLine("Creating transfer to account with matched transaction name");
-                            transfer_between_plaid_and_ff3_account(txn, match);
-                            continue;
                         }
 
                         // Did not find a matching txn: create single sided FF3 transaction
