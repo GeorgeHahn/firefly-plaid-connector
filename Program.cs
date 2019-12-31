@@ -13,18 +13,21 @@ using Acklann.Plaid;
 using FireflyIII.Net.Client;
 using FireflyIII.Net.Api;
 using FireflyIII.Net.Model;
+using CommandLine;
 
 namespace firefly_plaid_connector
 {
     public class Connector
     {
+        private Program.Args args;
         private readonly ConnectorConfig config;
         private readonly PlaidClient plaid;
         private readonly FireflyIII.Net.Api.TransactionsApi firefly;
         private List<Acklann.Plaid.Entity.Account> plaid_accounts = new List<Acklann.Plaid.Entity.Account>();
 
-        public Connector(ConnectorConfig config)
+        public Connector(Program.Args args, ConnectorConfig config)
         {
+            this.args = args;
             this.config = config;
             this.plaid = new PlaidClient(
                 config.plaid.client_id,
@@ -60,7 +63,8 @@ namespace firefly_plaid_connector
                     });
 
                     if (!accts.IsSuccessStatusCode) {
-                        throw new Exception("Failed to get account info");
+                        Console.WriteLine($"Failed to get account info for token '{token}'");
+                        System.Environment.Exit(1);
                     }
                     accounts = accts.Accounts;
                     itemid = accts.Item.Id;
@@ -196,6 +200,10 @@ namespace firefly_plaid_connector
             using (var datedb = new ImportDbContext())
             {
                 var plaidtxns = new List<Acklann.Plaid.Entity.Transaction>();
+                if(args.ForceSync) {
+                    Console.WriteLine($"Info: force sync enabled - requesting data from the last {config.max_sync_days} days");
+                }
+
                 foreach (var item in config.sync)
                 {
                     if (item.plaid_access_token == null)
@@ -207,17 +215,18 @@ namespace firefly_plaid_connector
                     var lastpoll = datedb.Poll.Where(p => p.PlaidId == item.plaid_account_id).FirstOrDefault();
                     var max_days = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
 
-                    // TODO: add an option to force a resync over the last `config.max_sync_days`
-                    // lastpoll.Time = max_days;
+                    if(args.ForceSync) {
+                        lastpoll.Time = max_days;
+                    }
 
                     if (lastpoll == null) {
                         lastpoll = new LastPoll();
                         lastpoll.PlaidId = item.plaid_account_id;
                         lastpoll.Time = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
                     } else if (lastpoll.Time < max_days) {
-                        // TODO: add a way to force this to run? (see force resync option above)
-                        Console.WriteLine("Error: last run was longer than max_sync_days ago; request a force sync option from author");
-                        throw new Exception("Last run was too long ago - transactions may be missed");
+                        Console.WriteLine($"Error: last program run was more than {config.max_sync_days} days ago");
+                        Console.WriteLine("Increase 'max_sync_days' in config.json or use the '--force-sync' argument to ignore this error");
+                        System.Environment.Exit(1);
                     }
 
                     // TODO future: this step can be done in parallel
@@ -284,7 +293,7 @@ namespace firefly_plaid_connector
                             }
                         }
 
-                        // Match hardcoded names (TODO: this can probably be done just as well with a FF3 rule. Test & remove.)
+                        // Match hardcoded names (this can be done just as well with a FF3 rule. Test & remove.)
                         // TODO: Consider allowing fuzzy matches?
                         var match = config.sync.FirstOrDefault(a => a.match_transaction?.transaction_name == txn.Name &&
                             a.match_transaction?.category_id == txn.CategoryId);
@@ -380,10 +389,31 @@ namespace firefly_plaid_connector
         }
     }
 
-    class Program
+    public class Program
     {
-        static int Main(string[] args)
+        public class Args
         {
+            [Option("force-sync", Required = false, HelpText = "Force synchronization of max_sync_days of data")]
+            public bool ForceSync { get; set; }
+        }
+
+        static int Main(string[] unparsed_args)
+        {
+            Args args = Parser.Default.ParseArguments<Args>(unparsed_args)
+                .MapResult(
+                    args => args,
+                    errors => {
+                        var first = errors.First();
+                        if (first.Tag == ErrorType.HelpRequestedError || first.Tag == ErrorType.VersionRequestedError) {
+                            System.Environment.Exit(1);
+                        }
+
+                        // Apparently there isn't a way to get the tag name??
+                        Console.WriteLine($"Unknown argument: {first.Tag}");
+                        System.Environment.Exit(0);
+                        return null;
+                    });
+
             var path = System.Environment.GetEnvironmentVariable("CONFIG_PATH") ?? System.Environment.CurrentDirectory;
             var config_path = Path.Combine(path, "config.json");
 
@@ -407,7 +437,7 @@ namespace firefly_plaid_connector
                 db.Database.Migrate();
             }
 
-            var connector = new Connector(config);
+            var connector = new Connector(args, config);
             connector.Run();
             return 0;
         }
