@@ -2,15 +2,10 @@
 using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
-using System.Text.RegularExpressions;
-using System.Net.Http;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json.Linq;
-using Acklann.Plaid.Entity;
 using Acklann.Plaid;
-using FireflyIII.Net.Client;
 using FireflyIII.Net.Api;
 using FireflyIII.Net.Model;
 using CommandLine;
@@ -53,16 +48,20 @@ namespace firefly_plaid_connector
                     AccessToken = token,
                 });
 
-                if (fullinfo.IsSuccessStatusCode) {
+                if (fullinfo.IsSuccessStatusCode)
+                {
                     accounts = fullinfo.Accounts;
                     itemid = fullinfo.Item.Id;
-                } else {
+                }
+                else
+                {
                     var accts = await this.plaid.FetchAccountAsync(new Acklann.Plaid.Balance.GetAccountRequest()
                     {
                         AccessToken = token,
                     });
 
-                    if (!accts.IsSuccessStatusCode) {
+                    if (!accts.IsSuccessStatusCode)
+                    {
                         Console.WriteLine($"Failed to get account info for token '{token}'");
                         System.Environment.Exit(1);
                     }
@@ -97,7 +96,8 @@ namespace firefly_plaid_connector
                         cfg.plaid_account_id = acct.Id;
                         cfg.account_lastfour = acct.Mask;
 
-                        if (fullinfo.IsSuccessStatusCode) {
+                        if (fullinfo.IsSuccessStatusCode)
+                        {
                             cfg.account_number = fullinfo.Numbers.ACH
                                                     .Where(a => a.AccountId == acct.Id)
                                                     .Select(a => a.AccountNumber)
@@ -165,7 +165,8 @@ namespace firefly_plaid_connector
             using (var datedb = new ImportDbContext())
             {
                 var plaidtxns = new List<Acklann.Plaid.Entity.Transaction>();
-                if(args.ForceSync) {
+                if (args.ForceSync)
+                {
                     Console.WriteLine($"Info: force sync enabled - requesting data from the last {config.max_sync_days} days");
                 }
 
@@ -180,15 +181,19 @@ namespace firefly_plaid_connector
                     var lastpoll = datedb.Poll.Where(p => p.PlaidId == item.plaid_account_id).FirstOrDefault();
                     var max_days = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
 
-                    if(args.ForceSync) {
+                    if (args.ForceSync)
+                    {
                         lastpoll.Time = max_days;
                     }
 
-                    if (lastpoll == null) {
+                    if (lastpoll == null)
+                    {
                         lastpoll = new LastPoll();
                         lastpoll.PlaidId = item.plaid_account_id;
                         lastpoll.Time = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
-                    } else if (lastpoll.Time < max_days) {
+                    }
+                    else if (lastpoll.Time < max_days)
+                    {
                         Console.WriteLine($"Error: last program run was more than {config.max_sync_days} days ago");
                         Console.WriteLine("Increase 'max_sync_days' in config.json or use the '--force-sync' argument to ignore this error");
                         System.Environment.Exit(1);
@@ -206,13 +211,16 @@ namespace firefly_plaid_connector
                     plaidtxns.AddRange(filter_pending);
 
                     // Next run, fetch all transactions from the last pending txn forward
-                    if (plaid_txn_rsp.Transactions.Count(c => c.Pending == true) > 0) {
+                    if (plaid_txn_rsp.Transactions.Count(c => c.Pending == true) > 0)
+                    {
                         lastpoll.Time = plaid_txn_rsp.Transactions
                                             .Where(t => t.Pending == true)
                                             .Select(t => t.Date)
                                             .OrderBy(t => t)
                                             .First();
-                    } else {
+                    }
+                    else
+                    {
                         lastpoll.Time = DateTime.Now;
                     }
 
@@ -291,11 +299,14 @@ namespace firefly_plaid_connector
                             Tags = txn.Categories?.ToList(),
                         };
 
-                        if(is_source) {
+                        if (is_source)
+                        {
                             transfer.Type = TransactionSplit.TypeEnum.Withdrawal;
                             transfer.SourceId = txn_config.firefly_account_id;
                             transfer.DestinationName = name;
-                        } else {
+                        }
+                        else
+                        {
                             transfer.Type = TransactionSplit.TypeEnum.Deposit;
                             transfer.SourceName = name;
                             transfer.DestinationId = txn_config.firefly_account_id;
@@ -356,9 +367,11 @@ namespace firefly_plaid_connector
             Args args = Parser.Default.ParseArguments<Args>(unparsed_args)
                 .MapResult(
                     args => args,
-                    errors => {
+                    errors =>
+                    {
                         var first = errors.First();
-                        if (first.Tag == ErrorType.HelpRequestedError || first.Tag == ErrorType.VersionRequestedError) {
+                        if (first.Tag == ErrorType.HelpRequestedError || first.Tag == ErrorType.VersionRequestedError)
+                        {
                             System.Environment.Exit(1);
                         }
 

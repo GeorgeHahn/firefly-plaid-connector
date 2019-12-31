@@ -1,4 +1,3 @@
-
 namespace firefly_plaid_connector
 {
     public class FireflyConfig
