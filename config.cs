@@ -85,7 +85,7 @@ namespace firefly_plaid_connector
         public SyncMode sync_mode { get; set; } = SyncMode.Batch;
 
         /// sync frenquency in minutes
-        public int sync_frequency { get; set; } = 60 * 24;
+        public int sync_frequency_minutes { get; set; } = 60 * 24;
 
         /// max days to sync
         public int max_sync_days { get; set; } = 30;

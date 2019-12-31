@@ -324,7 +324,7 @@ namespace firefly_plaid_connector
             while (true)
             {
                 await SyncOnce();
-                await Task.Delay(TimeSpan.FromMinutes(config.sync_frequency));
+                await Task.Delay(TimeSpan.FromMinutes(config.sync_frequency_minutes));
             }
         }
 
