@@ -1,3 +1,6 @@
+# Transaction IDs & poll log
+import-db.sqlite3
+
 *.swp
 *.*~
 project.lock.json
