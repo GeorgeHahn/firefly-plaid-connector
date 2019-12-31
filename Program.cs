@@ -205,10 +205,19 @@ namespace firefly_plaid_connector
                     }
 
                     var lastpoll = datedb.Poll.Where(p => p.PlaidId == item.plaid_account_id).FirstOrDefault();
+                    var max_days = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
+
+                    // TODO: add an option to force a resync over the last `config.max_sync_days`
+                    // lastpoll.Time = max_days;
+
                     if (lastpoll == null) {
                         lastpoll = new LastPoll();
                         lastpoll.PlaidId = item.plaid_account_id;
                         lastpoll.Time = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
+                    } else if (lastpoll.Time < max_days) {
+                        // TODO: add a way to force this to run? (see force resync option above)
+                        Console.WriteLine("Error: last run was longer than max_sync_days ago; request a force sync option from author");
+                        throw new Exception("Last run was too long ago - transactions may be missed");
                     }
 
                     // TODO future: this step can be done in parallel
@@ -218,11 +227,22 @@ namespace firefly_plaid_connector
                         EndDate = DateTime.Now,
                         AccessToken = item.plaid_access_token,
                     });
+                    // Immediately drop any pending transactions - we only want them once they're finalized
                     var filter_pending = plaid_txn_rsp.Transactions.Where(t => t.Pending == false);
                     plaidtxns.AddRange(filter_pending);
 
+                    // Next run, fetch all transactions from the last pending txn forward
+                    if (plaid_txn_rsp.Transactions.Count(c => c.Pending == true) > 0) {
+                        lastpoll.Time = plaid_txn_rsp.Transactions
+                                            .Where(t => t.Pending == true)
+                                            .Select(t => t.Date)
+                                            .OrderBy(t => t)
+                                            .First();
+                    } else {
+                        lastpoll.Time = DateTime.Now;
+                    }
+
                     // These updates will be saved at the end of the sync process
-                    lastpoll.Time = DateTime.Now;
                     datedb.Poll.Update(lastpoll);
                 }
 
