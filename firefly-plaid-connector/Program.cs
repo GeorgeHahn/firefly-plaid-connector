@@ -160,8 +160,6 @@ namespace firefly_plaid_connector
         {
             // TODO: Update FF3 account balances?
 
-            // Get all txns for every account
-
             using (var datedb = new ImportDbContext())
             {
                 var plaidtxns = new List<Acklann.Plaid.Entity.Transaction>();
@@ -170,6 +168,7 @@ namespace firefly_plaid_connector
                     Console.WriteLine($"Info: force sync enabled - requesting data from the last {config.max_sync_days} days");
                 }
 
+                // Get all txns for every account
                 foreach (var item in config.sync)
                 {
                     if (item.plaid_access_token == null)
@@ -200,12 +199,15 @@ namespace firefly_plaid_connector
                     }
 
                     // TODO future: this step can be done in parallel
+                    // TODO: this response carries account info that could be used to eliminate `InitializeAccountData`, but it is not
+                    // exposed by the Plaid.NET library. Consider adding the accounts key to this response.
                     var plaid_txn_rsp = await this.plaid.FetchTransactionsAsync(new Acklann.Plaid.Transactions.GetTransactionsRequest
                     {
                         StartDate = lastpoll.Time,
                         EndDate = DateTime.Now,
                         AccessToken = item.plaid_access_token,
                     });
+
                     // Immediately drop any pending transactions - we only want them once they're finalized
                     var filter_pending = plaid_txn_rsp.Transactions.Where(t => t.Pending == false);
                     plaidtxns.AddRange(filter_pending);
@@ -329,7 +331,6 @@ namespace firefly_plaid_connector
             }
         }
 
-
         public async Task SyncPolled()
         {
             while (true)
@@ -372,12 +373,12 @@ namespace firefly_plaid_connector
                         var first = errors.First();
                         if (first.Tag == ErrorType.HelpRequestedError || first.Tag == ErrorType.VersionRequestedError)
                         {
-                            System.Environment.Exit(1);
+                            System.Environment.Exit(0);
                         }
 
                         // Apparently there isn't a way to get the tag name??
                         Console.WriteLine($"Unknown argument: {first.Tag}");
-                        System.Environment.Exit(0);
+                        System.Environment.Exit(-1);
                         return null;
                     });
 
