@@ -37,10 +37,13 @@ namespace firefly_plaid_connector
 
         // One of these is required
         public int firefly_account_id { get; set; }
-        public string firefly_account { get; set; }
+        // TODO: Support specifying firefly accounts by name
+        // public string firefly_account { get; set; }
 
+        // (todo: move these to a non-user-specified/deserialized class)
         /// Automatically populated on startup
         public string plaid_item_id { get; set; }
+        /// Automatically populated on startup
         public string plaid_access_token { get; set; }
 
         public override string ToString()
