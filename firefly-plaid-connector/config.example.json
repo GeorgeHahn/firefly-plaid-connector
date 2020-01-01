@@ -1,0 +1,74 @@
+{
+    // sync_mode can be "batch" or "polled":
+    //  - "batch" runs once and exits
+    //  - "polled" runs forever, syncing every "sync_frequency_minutes"
+    "sync_mode": "batch",
+
+    // minutes to wait between syncs in polled mode
+    "sync_frequency_minutes": 360,
+
+    // number of days of data to sync
+    "max_sync_days": 30,
+
+    // Plaid configuration
+    "plaid": {
+        "client_id": "<your plaid client id here>",
+        "pubkey": "<your plaid pubkey here>",
+        "secret": "<your plaid secret here>",
+        "access_tokens": [
+            "<list of plaid access tokens for accounts to sync>",
+            "<the plaid quickstart example may be used to create tokens>",
+            "<see: https://github.com/plaid/quickstart>"
+        ]
+    },
+
+    // Firefly configuration
+    "firefly": {
+        "url": "http://<your firefly url>",
+
+        // Firefly personal access tokens can be created in FF3 on the
+        // Options > Profile page
+        "token": "<firefly personal access token>"
+    },
+
+    // Account sync configuration
+    "sync": [
+        {
+            // Firefly ID for this account
+            "firefly_account_id": 1,
+
+            // Plaid accounts can be matched by specifying any number of the
+            // below fields. If specified, the value given here must match the
+            // account.
+
+            // Match to an account by its unique Plaid ID
+            "plaid_account_id": "<a plaid account id>",
+
+            // Or match to an account by name, number, or institution code
+            // Any combination of these may be specified; omit fields to ignore
+            // them. (Fields should generally not be left blank - delete them.)
+            "account_name": "Branded Account Name",
+            "account_officialname": "Other Branded Account Name",
+            "account_institution_id": "XX",
+            "account_lastfour": "XXXX",
+
+            // Full account number retrieval is not supported on some accounts
+            // and account types (like credit cards). This will not be detected
+            // automatically and will always fail to match. The above fields
+            // should be used in these cases.
+            "account_number": "XXXXXXXXXXXX"
+        },
+        {
+            // Example: match account using its unique Plaid account id
+            "firefly_account_id": 2,
+            "plaid_account_id": "<plaid id>"
+        },
+        {
+            // Example: match account name and last four of the account number
+            "firefly_account_id": 3,
+
+            "account_name": "Savings Account",
+            "account_lastfour": "XXXX"
+        }
+    ]
+}
