@@ -12,13 +12,15 @@
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.6.0" />
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
-    <!-- <PackageReference Include="Acklann.Plaid" Version="0.0.9-beta" /> -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="3.1.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="3.1.0" />
+    <!-- <PackageReference Include="Acklann.Plaid" Version="0.0.9-beta" /> -->
+    <!-- TODO: Switch this to a git submodule until the next version goes out -->
     <ProjectReference Include="..\Plaid.NET\src\Plaid\Plaid.csproj" />
+    <!-- TODO: Publish this lib -->
     <ProjectReference Include="..\firefly-client-core\generated\src\FireflyIII.Net\FireflyIII.Net.csproj" />
   </ItemGroup>
 
