@@ -10,6 +10,8 @@ WORKDIR /app
 COPY . ./
 RUN cd firefly-plaid-connector && dotnet restore && dotnet publish -c Release -o out
 
+ENV CONFIG_PATH=/config
+
 FROM mcr.microsoft.com/dotnet/core/runtime:3.1 AS runtime
 WORKDIR /app
 COPY --from=build /app/firefly-plaid-connector/out ./
