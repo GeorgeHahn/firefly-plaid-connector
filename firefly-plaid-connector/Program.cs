@@ -273,7 +273,7 @@ namespace firefly_plaid_connector
                             // Attempt to collect Transfer/Debit & Transfer/Credit pair into a single FF3 transfer transaction
                             var other = plaidtxns.FirstOrDefault(t =>
                                 t.Amount == -1 * txn.Amount &&
-                                (t.Date - txn.Date < TimeSpan.FromDays(7)) && // less than a week apart
+                                ((t.Date - txn.Date).Duration() < TimeSpan.FromDays(7)) && // less than a week apart
                                 t.CurrencyCode == txn.CurrencyCode &&
                                 ((t.CategoryId == "21005000" && txn.CategoryId == "21006000") ||
                                 (t.CategoryId == "21006000" && txn.CategoryId == "21005000") ||
