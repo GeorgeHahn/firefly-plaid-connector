@@ -125,18 +125,17 @@ namespace firefly_plaid_connector
                 }
 
                 // TODO: shrink txn names? (too verbose: "Requested transfer from... account XXXXXX0123 -> Incoming transfer from ...")
-                var transfer = new FireflyIII.Model.TransactionSplit
-                {
-                    Date = source.Date,
-                    ProcessDate = dest.Date,
-                    Description = source.Name + " -> " + dest.Name,
-                    Amount = source.Amount,
-                    CurrencyCode = source.CurrencyCode,
-                    ExternalId = source.TransactionId + " -> " + dest.TransactionId,
-                    Type = TransactionSplit.TypeEnum.Transfer,
-                    SourceId = source_config.firefly_account_id,
-                    DestinationId = dest_config.firefly_account_id,
-                };
+                var transfer = new FireflyIII.Model.TransactionSplit(
+                    date: source.Date,
+                    processDate: dest.Date,
+                    description: source.Name + " -> " + dest.Name,
+                    amount: source.Amount,
+                    currencyCode: source.CurrencyCode,
+                    externalId: source.TransactionId + " -> " + dest.TransactionId,
+                    type: TransactionSplit.TypeEnum.Transfer,
+                    sourceId: source_config.firefly_account_id,
+                    destinationId: dest_config.firefly_account_id
+                );
                 var storedtransfer = firefly.StoreTransaction(new FireflyIII.Model.Transaction(new[] { transfer }.ToList()));
 
                 // Record both transactions as imported
@@ -213,8 +212,7 @@ namespace firefly_plaid_connector
                     var page_txn_list = new List<Acklann.Plaid.Entity.Transaction>();
                     do
                     {
-                        // TODO: this response carries account info that could be used to eliminate `InitializeAccountData`, but it is not
-                        // exposed by the Plaid.NET library. Consider adding the accounts key to this response.
+                        // TODO: Fill in account info from this response and eliminate most of the `InitializeAccountData` step
                         var plaid_txn_rsp = await this.plaid.FetchTransactionsAsync(new Acklann.Plaid.Transactions.GetTransactionsRequest
                         {
                             StartDate = lastpoll.Time,
@@ -231,7 +229,7 @@ namespace firefly_plaid_connector
                         page_txn_list.AddRange(plaid_txn_rsp.Transactions);
 
                         Console.WriteLine($"Fetched {page_offset}/{page_count}");
-                    } while(page_offset < page_count);
+                    } while (page_offset < page_count);
 
                     // Only record transactions that are not pending
                     plaidtxns.AddRange(page_txn_list.Where(t => t.Pending == false));
@@ -315,15 +313,14 @@ namespace firefly_plaid_connector
                         var name = txn.Name;
                         // TODO: fill name with PaymentInfo if non-null
 
-                        var transfer = new FireflyIII.Model.TransactionSplit
-                        {
-                            Date = txn.Date,
-                            Description = txn.Name,
-                            Amount = Math.Abs(txn.Amount),
-                            CurrencyCode = txn.CurrencyCode,
-                            ExternalId = txn.TransactionId,
-                            Tags = txn.Categories?.ToList(),
-                        };
+                        var transfer = new FireflyIII.Model.TransactionSplit (
+                            date: txn.Date,
+                            description: txn.Name,
+                            amount: Math.Abs(txn.Amount),
+                            currencyCode: txn.CurrencyCode,
+                            externalId: txn.TransactionId,
+                            tags: txn.Categories?.ToList()
+                        );
 
                         if (is_source)
                         {
