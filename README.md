@@ -19,6 +19,11 @@ be synchronized. This tool does not provide a UI for linking accounts to Plaid.
 Accounds can be linked using the [Plaid Quickstart tool](https://github.com/plaid/quickstart");
 copy the access token for each institution into `config.json`.
 
+Please note: the information stored in `config.json` (and the `import-db.sqlite3`
+database that is created at runtime) is sufficient for anyone to query
+your account information and transaction history. These should be kept very
+secure.
+
 ### Docker
 
 Move `config.json` into the `./config` volume

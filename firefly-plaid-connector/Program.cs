@@ -168,58 +168,82 @@ namespace firefly_plaid_connector
                     Console.WriteLine($"Info: force sync enabled - requesting data from the last {config.max_sync_days} days");
                 }
 
-                // Get all txns for every account
-                foreach (var item in config.sync)
-                {
-                    if (item.plaid_access_token == null)
-                    {
-                        // Don't try to sync accounts that don't have an access token
-                        continue;
-                    }
+                // Get list of unique plaid access tokens to query
+                var plats_to_use = config.sync
+                                    .Select(t => t.plaid_access_token)
+                                    .Where(t => !String.IsNullOrWhiteSpace(t))
+                                    .Distinct();
 
-                    var lastpoll = datedb.Poll.Where(p => p.PlaidId == item.plaid_account_id).FirstOrDefault();
+                // Get all txns for every access token in use
+                foreach (var token in plats_to_use)
+                {
+                    // TODO: It's not very desirable to have access tokens in the db. It would be
+                    // better to figure out the next-poll time for each account ID and store that,
+                    // then figure out the correct poll time for each access token.
+                    var lastpoll = datedb.Poll.Where(p => p.PlaidId == token).FirstOrDefault();
                     var max_days = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
 
+                    // If we haven't polled this account before, request `config.max_sync_days` of data
+                    if (lastpoll == null)
+                    {
+                        lastpoll = new LastPoll();
+                        lastpoll.PlaidId = token;
+                        lastpoll.Time = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
+                    }
+
+                    // Override lastpoll if the force-sync flag was passed
                     if (args.ForceSync)
                     {
                         lastpoll.Time = max_days;
                     }
 
-                    if (lastpoll == null)
-                    {
-                        lastpoll = new LastPoll();
-                        lastpoll.PlaidId = item.plaid_account_id;
-                        lastpoll.Time = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
-                    }
-                    else if (lastpoll.Time < max_days)
+                    // Throw an error and exit if the last poll was more than `max_sync_days` ago
+                    if (lastpoll.Time < max_days)
                     {
                         Console.WriteLine($"Error: last program run was more than {config.max_sync_days} days ago");
-                        Console.WriteLine("Increase 'max_sync_days' in config.json or use the '--force-sync' argument to ignore this error");
+                        Console.WriteLine("Increase 'max_sync_days' in config.json or use the '--force-sync' argument to ignore this error (and potentially miss some transactions)");
                         System.Environment.Exit(1);
                     }
 
-                    // TODO future: this step can be done in parallel
-                    // TODO: this response carries account info that could be used to eliminate `InitializeAccountData`, but it is not
-                    // exposed by the Plaid.NET library. Consider adding the accounts key to this response.
-                    var plaid_txn_rsp = await this.plaid.FetchTransactionsAsync(new Acklann.Plaid.Transactions.GetTransactionsRequest
+                    // Handle response pagination
+                    uint request_size = 100;
+                    uint page_offset = 0;
+                    var now = DateTime.Now;
+                    var page_count = 0;
+                    var page_txn_list = new List<Acklann.Plaid.Entity.Transaction>();
+                    do
                     {
-                        StartDate = lastpoll.Time,
-                        EndDate = DateTime.Now,
-                        AccessToken = item.plaid_access_token,
-                    });
+                        // TODO: this response carries account info that could be used to eliminate `InitializeAccountData`, but it is not
+                        // exposed by the Plaid.NET library. Consider adding the accounts key to this response.
+                        var plaid_txn_rsp = await this.plaid.FetchTransactionsAsync(new Acklann.Plaid.Transactions.GetTransactionsRequest
+                        {
+                            StartDate = lastpoll.Time,
+                            EndDate = now,
+                            AccessToken = token,
+                            Options = new Acklann.Plaid.Transactions.GetTransactionsRequest.PaginationOptions
+                            {
+                                Offset = page_offset,
+                                Total = request_size,
+                            },
+                        });
+                        page_count = plaid_txn_rsp.TransactionsReturned;
+                        page_offset += (uint)plaid_txn_rsp.Transactions.Count();
+                        page_txn_list.AddRange(plaid_txn_rsp.Transactions);
 
-                    // Immediately drop any pending transactions - we only want them once they're finalized
-                    var filter_pending = plaid_txn_rsp.Transactions.Where(t => t.Pending == false);
-                    plaidtxns.AddRange(filter_pending);
+                        Console.WriteLine($"Fetched {page_offset}/{page_count}");
+                    } while(page_offset < page_count);
+
+                    // Only record transactions that are not pending
+                    plaidtxns.AddRange(page_txn_list.Where(t => t.Pending == false));
 
                     // Next run, fetch all transactions from the last pending txn forward
-                    if (plaid_txn_rsp.Transactions.Count(c => c.Pending == true) > 0)
+                    if (page_txn_list.Count(c => c.Pending == true) > 0)
                     {
-                        lastpoll.Time = plaid_txn_rsp.Transactions
-                                            .Where(t => t.Pending == true)
-                                            .Select(t => t.Date)
-                                            .OrderBy(t => t)
-                                            .First();
+                        lastpoll.Time = page_txn_list
+                            .Where(t => t.Pending == true)
+                            .Select(t => t.Date)
+                            .OrderBy(t => t)
+                            .First();
                     }
                     else
                     {
