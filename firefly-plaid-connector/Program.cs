@@ -6,8 +6,8 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using Microsoft.EntityFrameworkCore;
 using Acklann.Plaid;
-using FireflyIII.Net.Api;
-using FireflyIII.Net.Model;
+using FireflyIII.Api;
+using FireflyIII.Model;
 using CommandLine;
 
 namespace firefly_plaid_connector
@@ -17,7 +17,7 @@ namespace firefly_plaid_connector
         private Program.Args args;
         private readonly ConnectorConfig config;
         private readonly PlaidClient plaid;
-        private readonly FireflyIII.Net.Api.TransactionsApi firefly;
+        private readonly FireflyIII.Api.TransactionsApi firefly;
         private List<Acklann.Plaid.Entity.Account> plaid_accounts = new List<Acklann.Plaid.Entity.Account>();
 
         public Connector(Program.Args args, ConnectorConfig config)
@@ -29,7 +29,7 @@ namespace firefly_plaid_connector
                 config.plaid.secret,
                 config.plaid.pubkey,
                 Acklann.Plaid.Environment.Development);
-            this.firefly = new TransactionsApi(new FireflyIII.Net.Client.Configuration()
+            this.firefly = new TransactionsApi(new FireflyIII.Client.Configuration()
             {
                 BasePath = config.firefly.Url,
                 AccessToken = config.firefly.Token,
@@ -125,7 +125,7 @@ namespace firefly_plaid_connector
                 }
 
                 // TODO: shrink txn names? (too verbose: "Requested transfer from... account XXXXXX0123 -> Incoming transfer from ...")
-                var transfer = new FireflyIII.Net.Model.TransactionSplit
+                var transfer = new FireflyIII.Model.TransactionSplit
                 {
                     Date = source.Date,
                     ProcessDate = dest.Date,
@@ -137,7 +137,7 @@ namespace firefly_plaid_connector
                     SourceId = source_config.firefly_account_id,
                     DestinationId = dest_config.firefly_account_id,
                 };
-                var storedtransfer = firefly.StoreTransaction(new FireflyIII.Net.Model.Transaction(new[] { transfer }.ToList()));
+                var storedtransfer = firefly.StoreTransaction(new FireflyIII.Model.Transaction(new[] { transfer }.ToList()));
 
                 // Record both transactions as imported
                 db.Transactions.AddRange(new[] {
@@ -291,7 +291,7 @@ namespace firefly_plaid_connector
                         var name = txn.Name;
                         // TODO: fill name with PaymentInfo if non-null
 
-                        var transfer = new FireflyIII.Net.Model.TransactionSplit
+                        var transfer = new FireflyIII.Model.TransactionSplit
                         {
                             Date = txn.Date,
                             Description = txn.Name,
@@ -314,7 +314,7 @@ namespace firefly_plaid_connector
                             transfer.DestinationId = txn_config.firefly_account_id;
                         }
 
-                        var storedtransfer = firefly.StoreTransaction(new FireflyIII.Net.Model.Transaction(new[] { transfer }.ToList()));
+                        var storedtransfer = firefly.StoreTransaction(new FireflyIII.Model.Transaction(new[] { transfer }.ToList()));
 
                         // Record transaction as imported
                         db.Transactions.Add(new ImportedTransaction

@@ -1,6 +1,0 @@
-# To generate the client:
-# openapi-generator generate -g csharp-netcore -i firefly-iii-0.10.4.yaml -c openapi-dotnet.yaml -o generated/
-
-packageName: FireflyIII
-packageVersion: 0.1.0
-targetFramework: netstandard2.0
