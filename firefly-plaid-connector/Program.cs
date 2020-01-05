@@ -110,49 +110,103 @@ namespace firefly_plaid_connector
             }
         }
 
-        private void transfer_between_two_plaid_accounts(Acklann.Plaid.Entity.Transaction txn, Acklann.Plaid.Entity.Transaction other)
+        private void transfer_between_two_plaid_accounts(ImportDbContext db, Acklann.Plaid.Entity.Transaction txn, Acklann.Plaid.Entity.Transaction other)
         {
-            using (var db = new ImportDbContext())
+            var source = txn.Amount > 0 ? txn : other;
+            var dest = txn.Amount < 0 ? txn : other;
+            var source_config = config.sync.FirstOrDefault(a => a.plaid_account_id == source.AccountId);
+            var dest_config = config.sync.FirstOrDefault(a => a.plaid_account_id == dest.AccountId);
+
+            if (source_config == null || dest_config == null)
             {
-                var source = txn.Amount > 0 ? txn : other;
-                var dest = txn.Amount < 0 ? txn : other;
-                var source_config = config.sync.FirstOrDefault(a => a.plaid_account_id == source.AccountId);
-                var dest_config = config.sync.FirstOrDefault(a => a.plaid_account_id == dest.AccountId);
+                throw new Exception($"Account not found in config: {source.AccountId} or {dest.AccountId}");
+            }
 
-                if (source_config == null || dest_config == null)
+            // TODO: shrink txn names? (too verbose: "Requested transfer from... account XXXXXX0123 -> Incoming transfer from ...")
+            var transfer = new FireflyIII.Model.TransactionSplit(
+                date: source.Date,
+                processDate: dest.Date,
+                description: source.Name + " -> " + dest.Name,
+                amount: source.Amount,
+                currencyCode: source.CurrencyCode,
+                externalId: source.TransactionId + " -> " + dest.TransactionId,
+                type: TransactionSplit.TypeEnum.Transfer,
+                sourceId: source_config.firefly_account_id,
+                destinationId: dest_config.firefly_account_id
+            );
+            var storedtransfer = firefly.StoreTransaction(new FireflyIII.Model.Transaction(new[] { transfer }.ToList()));
+
+            // Record both transactions as imported
+            db.Transactions.AddRange(new[] {
+                new ImportedTransaction
                 {
-                    throw new Exception($"Account not found in config: {source.AccountId} or {dest.AccountId}");
+                    PlaidId = txn.TransactionId,
+                    FireflyId = storedtransfer.Data.Id,
+                },
+                new ImportedTransaction
+                {
+                    PlaidId = other.TransactionId,
+                    FireflyId = storedtransfer.Data.Id,
                 }
+            });
+            db.SaveChanges();
+        }
 
-                // TODO: shrink txn names? (too verbose: "Requested transfer from... account XXXXXX0123 -> Incoming transfer from ...")
-                var transfer = new FireflyIII.Model.TransactionSplit(
-                    date: source.Date,
-                    processDate: dest.Date,
-                    description: source.Name + " -> " + dest.Name,
-                    amount: source.Amount,
-                    currencyCode: source.CurrencyCode,
-                    externalId: source.TransactionId + " -> " + dest.TransactionId,
-                    type: TransactionSplit.TypeEnum.Transfer,
-                    sourceId: source_config.firefly_account_id,
-                    destinationId: dest_config.firefly_account_id
-                );
-                var storedtransfer = firefly.StoreTransaction(new FireflyIII.Model.Transaction(new[] { transfer }.ToList()));
+        private void sindle_sided_transaction(ImportDbContext db, Acklann.Plaid.Entity.Transaction txn)
+        {
+            Console.WriteLine("Creating single sided transaction");
 
-                // Record both transactions as imported
-                db.Transactions.AddRange(new[] {
-                    new ImportedTransaction
-                    {
-                        PlaidId = txn.TransactionId,
-                        FireflyId = storedtransfer.Data.Id,
-                    },
-                    new ImportedTransaction
-                    {
-                        PlaidId = other.TransactionId,
-                        FireflyId = storedtransfer.Data.Id,
-                    }
+            var txn_config = config.sync.FirstOrDefault(a => a.plaid_account_id == txn.AccountId);
+            if (txn_config == null)
+            {
+                Console.WriteLine($"Dropping transaction; account not configured for sync: {txn.AccountId}");
+
+                // Record transaction as imported
+                db.Transactions.Add(new ImportedTransaction
+                {
+                    PlaidId = txn.TransactionId,
+                    FireflyId = null,
                 });
                 db.SaveChanges();
+                return;
             }
+
+            var is_source = txn.Amount > 0;
+
+            var name = txn.Name;
+            // TODO: fill name with PaymentInfo if non-null
+
+            var transfer = new FireflyIII.Model.TransactionSplit (
+                date: txn.Date,
+                description: txn.Name,
+                amount: Math.Abs(txn.Amount),
+                currencyCode: txn.CurrencyCode,
+                externalId: txn.TransactionId,
+                tags: txn.Categories?.ToList()
+            );
+
+            if (is_source)
+            {
+                transfer.Type = TransactionSplit.TypeEnum.Withdrawal;
+                transfer.SourceId = txn_config.firefly_account_id;
+                transfer.DestinationName = name;
+            }
+            else
+            {
+                transfer.Type = TransactionSplit.TypeEnum.Deposit;
+                transfer.SourceName = name;
+                transfer.DestinationId = txn_config.firefly_account_id;
+            }
+
+            var storedtransfer = firefly.StoreTransaction(new FireflyIII.Model.Transaction(new[] { transfer }.ToList()));
+
+            // Record transaction as imported
+            db.Transactions.Add(new ImportedTransaction
+            {
+                PlaidId = txn.TransactionId,
+                FireflyId = storedtransfer.Data.Id,
+            });
+            db.SaveChanges();
         }
 
         public async Task SyncOnce()
@@ -271,7 +325,7 @@ namespace firefly_plaid_connector
                             txn.CategoryId == "21009000")   // some amex are miscategorized as transfer - payroll
                         {
                             // Attempt to collect Transfer/Debit & Transfer/Credit pair into a single FF3 transfer transaction
-                            var other = plaidtxns.FirstOrDefault(t =>
+                            var others = plaidtxns.Where(t =>
                                 t.Amount == -1 * txn.Amount &&
                                 ((t.Date - txn.Date).Duration() < TimeSpan.FromDays(7)) && // less than a week apart
                                 t.CurrencyCode == txn.CurrencyCode &&
@@ -281,69 +335,28 @@ namespace firefly_plaid_connector
                                 (t.CategoryId == "21009000" && txn.CategoryId == "16001000"))
                             );
 
-                            if (other != null)
+                            if (others != null && others.Count() > 0)
                             {
-                                // Found a matching txn
-                                Console.WriteLine("Found matching txn pair");
-                                transfer_between_two_plaid_accounts(txn, other);
-                                continue;
+                                if (others.Count() == 1) {
+                                    // Found exactly one matching txn
+                                    Console.WriteLine("Found matching txn pair");
+                                    transfer_between_two_plaid_accounts(db, txn, others.First());
+                                    continue;
+                                } else {
+                                    // Found multiple possible transactions
+                                    Console.WriteLine("Found multiple possible transfer pairings; creating single sided txns instead");
+                                    // Create the single sided txns here; otherwise, we'll may end up creating a pair from remaining transactions as we continue processing.
+                                    sindle_sided_transaction(db, txn);
+                                    foreach (var other in others) {
+                                        sindle_sided_transaction(db, other);
+                                    }
+                                    continue;
+                                }
                             }
                         }
 
                         // Did not find a matching txn: create single sided FF3 transaction
-                        Console.WriteLine("Creating single sided transaction");
-
-                        var txn_config = config.sync.FirstOrDefault(a => a.plaid_account_id == txn.AccountId);
-                        if (txn_config == null)
-                        {
-                            Console.WriteLine($"Dropping transaction; account not configured for sync: {txn.AccountId}");
-
-                            // Record transaction as imported
-                            db.Transactions.Add(new ImportedTransaction
-                            {
-                                PlaidId = txn.TransactionId,
-                                FireflyId = null,
-                            });
-                            db.SaveChanges();
-                            continue;
-                        }
-
-                        var is_source = txn.Amount > 0;
-
-                        var name = txn.Name;
-                        // TODO: fill name with PaymentInfo if non-null
-
-                        var transfer = new FireflyIII.Model.TransactionSplit (
-                            date: txn.Date,
-                            description: txn.Name,
-                            amount: Math.Abs(txn.Amount),
-                            currencyCode: txn.CurrencyCode,
-                            externalId: txn.TransactionId,
-                            tags: txn.Categories?.ToList()
-                        );
-
-                        if (is_source)
-                        {
-                            transfer.Type = TransactionSplit.TypeEnum.Withdrawal;
-                            transfer.SourceId = txn_config.firefly_account_id;
-                            transfer.DestinationName = name;
-                        }
-                        else
-                        {
-                            transfer.Type = TransactionSplit.TypeEnum.Deposit;
-                            transfer.SourceName = name;
-                            transfer.DestinationId = txn_config.firefly_account_id;
-                        }
-
-                        var storedtransfer = firefly.StoreTransaction(new FireflyIII.Model.Transaction(new[] { transfer }.ToList()));
-
-                        // Record transaction as imported
-                        db.Transactions.Add(new ImportedTransaction
-                        {
-                            PlaidId = txn.TransactionId,
-                            FireflyId = storedtransfer.Data.Id,
-                        });
-                        db.SaveChanges();
+                        sindle_sided_transaction(db, txn);
                     }
                 }
 
