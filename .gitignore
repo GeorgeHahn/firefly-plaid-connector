@@ -1,6 +1,9 @@
 # Transaction IDs & poll log
 import-db.sqlite3
 
+# Config
+config.toml
+
 *.swp
 *.*~
 project.lock.json
@@ -35,9 +38,3 @@ msbuild.wrn
 
 # Visual Studio 2015
 .vs/
-
-# Database
-wallabag_reducer.sqlite3
-
-# Config
-config.json

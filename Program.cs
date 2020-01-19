@@ -9,6 +9,7 @@ using Acklann.Plaid;
 using FireflyIII.Api;
 using FireflyIII.Model;
 using CommandLine;
+using Nett;
 
 namespace firefly_plaid_connector
 {
@@ -71,7 +72,7 @@ namespace firefly_plaid_connector
 
                 foreach (var acct in accounts)
                 {
-                    var cfg = config.sync.FirstOrDefault(a =>
+                    var cfg = config.account.FirstOrDefault(a =>
                         // Match to as much account info as is given
 
                         (a.plaid_account_id != null || a.account_name != null || a.account_officialname != null ||
@@ -114,8 +115,8 @@ namespace firefly_plaid_connector
         {
             var source = txn.Amount > 0 ? txn : other;
             var dest = txn.Amount < 0 ? txn : other;
-            var source_config = config.sync.FirstOrDefault(a => a.plaid_account_id == source.AccountId);
-            var dest_config = config.sync.FirstOrDefault(a => a.plaid_account_id == dest.AccountId);
+            var source_config = config.account.FirstOrDefault(a => a.plaid_account_id == source.AccountId);
+            var dest_config = config.account.FirstOrDefault(a => a.plaid_account_id == dest.AccountId);
 
             if (source_config == null || dest_config == null)
             {
@@ -156,7 +157,7 @@ namespace firefly_plaid_connector
         {
             Console.WriteLine("Creating single sided transaction");
 
-            var txn_config = config.sync.FirstOrDefault(a => a.plaid_account_id == txn.AccountId);
+            var txn_config = config.account.FirstOrDefault(a => a.plaid_account_id == txn.AccountId);
             if (txn_config == null)
             {
                 Console.WriteLine($"Dropping transaction; account not configured for sync: {txn.AccountId}");
@@ -218,11 +219,11 @@ namespace firefly_plaid_connector
                 var plaidtxns = new List<Acklann.Plaid.Entity.Transaction>();
                 if (args.ForceSync)
                 {
-                    Console.WriteLine($"Info: force sync enabled - requesting data from the last {config.max_sync_days} days");
+                    Console.WriteLine($"Info: force sync enabled - requesting data from the last {config.sync.max_sync_days} days");
                 }
 
                 // Get list of unique plaid access tokens to query
-                var plats_to_use = config.sync
+                var plats_to_use = config.account
                                     .Select(t => t.plaid_access_token)
                                     .Where(t => !String.IsNullOrWhiteSpace(t))
                                     .Distinct();
@@ -234,14 +235,14 @@ namespace firefly_plaid_connector
                     // better to figure out the next-poll time for each account ID and store that,
                     // then figure out the correct poll time for each access token.
                     var lastpoll = datedb.Poll.Where(p => p.PlaidId == token).FirstOrDefault();
-                    var max_days = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
+                    var max_days = DateTime.Now - TimeSpan.FromDays(config.sync.max_sync_days);
 
-                    // If we haven't polled this account before, request `config.max_sync_days` of data
+                    // If we haven't polled this account before, request `config.sync.max_sync_days` of data
                     if (lastpoll == null)
                     {
                         lastpoll = new LastPoll();
                         lastpoll.PlaidId = token;
-                        lastpoll.Time = DateTime.Now - TimeSpan.FromDays(config.max_sync_days);
+                        lastpoll.Time = DateTime.Now - TimeSpan.FromDays(config.sync.max_sync_days);
                     }
 
                     // Override lastpoll if the force-sync flag was passed
@@ -250,11 +251,11 @@ namespace firefly_plaid_connector
                         lastpoll.Time = max_days;
                     }
 
-                    // Throw an error and exit if the last poll was more than `max_sync_days` ago
+                    // Throw an error and exit if the last poll was more than `sync.max_sync_days` ago
                     if (lastpoll.Time < max_days)
                     {
-                        Console.WriteLine($"Error: last program run was more than {config.max_sync_days} days ago");
-                        Console.WriteLine("Increase 'max_sync_days' in config.json or use the '--force-sync' argument to ignore this error (and potentially miss some transactions)");
+                        Console.WriteLine($"Error: last program run was more than {config.sync.max_sync_days} days ago");
+                        Console.WriteLine("Increase 'sync.max_sync_days' configuration value or use the '--force-sync' argument to ignore this error (and potentially miss some transactions)");
                         System.Environment.Exit(1);
                     }
 
@@ -370,19 +371,19 @@ namespace firefly_plaid_connector
             while (true)
             {
                 await SyncOnce();
-                await Task.Delay(TimeSpan.FromMinutes(config.sync_frequency_minutes));
+                await Task.Delay(TimeSpan.FromMinutes(config.sync.sync_frequency_minutes));
             }
         }
 
         public void Run()
         {
             InitializeAccountData().Wait();
-            switch (config.sync_mode)
+            switch (config.sync.sync_mode)
             {
-                case SyncMode.Batch:
+                case SyncMode.batch:
                     SyncOnce().Wait();
                     return;
-                case SyncMode.Polled:
+                case SyncMode.polled:
                     SyncPolled().Wait();
                     return;
             }
@@ -393,7 +394,7 @@ namespace firefly_plaid_connector
     {
         public class Args
         {
-            [Option("force-sync", Required = false, HelpText = "Force synchronization of max_sync_days of data")]
+            [Option("force-sync", Required = false, HelpText = "Force synchronization of `sync.max_sync_days` of data")]
             public bool ForceSync { get; set; }
         }
 
@@ -417,7 +418,7 @@ namespace firefly_plaid_connector
                     });
 
             var path = System.Environment.GetEnvironmentVariable("CONFIG_PATH") ?? System.Environment.CurrentDirectory;
-            var config_path = Path.Combine(path, "config.json");
+            var config_path = Path.Combine(path, "config.toml");
 
             if (!File.Exists(config_path))
             {
@@ -425,7 +426,7 @@ namespace firefly_plaid_connector
                 return -1;
             }
 
-            var config = JsonConvert.DeserializeObject<ConnectorConfig>(File.ReadAllText(config_path));
+            var config = Toml.ReadFile<ConnectorConfig>(config_path);
             if (config == null)
             {
                 Console.WriteLine($"Error: invalid config file");
