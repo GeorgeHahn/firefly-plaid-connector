@@ -1,5 +1,17 @@
 namespace firefly_plaid_connector
 {
+    public class SyncConfig
+    {
+        /// Sync mode
+        public SyncMode sync_mode { get; set; } = SyncMode.batch;
+
+        /// sync frenquency in minutes
+        public int sync_frequency_minutes { get; set; } = 60 * 24;
+
+        /// max days to sync
+        public int max_sync_days { get; set; } = 30;
+    }
+
     public class FireflyConfig
     {
         public string Url { get; set; }
@@ -14,12 +26,13 @@ namespace firefly_plaid_connector
         public string[] access_tokens { get; set; }
     }
 
+    // Rename these values to Caps after this issue is solved: https://github.com/paiden/Nett/issues/80
     public enum SyncMode
     {
         // Sync once and exit
-        Batch,
+        batch,
         // Sync every `SyncFrequency` seconds
-        Polled,
+        polled,
         // TODO future: webhook triggered sync
     }
 
@@ -74,6 +87,9 @@ namespace firefly_plaid_connector
 
     public class ConnectorConfig
     {
+        /// General sync config
+        public SyncConfig sync { get; set; }
+
         /// Plaid account configuration
         public PlaidConfig plaid { get; set; }
 
@@ -81,15 +97,6 @@ namespace firefly_plaid_connector
         public FireflyConfig firefly { get; set; }
 
         /// A list of items to sync
-        public Account[] sync { get; set; }
-
-        /// Sync mode
-        public SyncMode sync_mode { get; set; } = SyncMode.Batch;
-
-        /// sync frenquency in minutes
-        public int sync_frequency_minutes { get; set; } = 60 * 24;
-
-        /// max days to sync
-        public int max_sync_days { get; set; } = 30;
+        public Account[] account { get; set; }
     }
 }

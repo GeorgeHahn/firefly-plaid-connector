@@ -1,3 +1,9 @@
+# Transaction IDs & poll log
+import-db.sqlite3
+
+# Config
+config.toml
+
 *.*~
 project.lock.json
 .DS_Store
