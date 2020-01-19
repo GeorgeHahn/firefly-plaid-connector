@@ -44,6 +44,4 @@ services:
 
 ### From source
 
-Build `firefly-plaid-connector` with the .Net Core 3.1 SDK. Repo organization is
-currentlty subpar due to dependencies on two libraries that are not yet
-avalable on Nuget.
+Build `firefly-plaid-connector` with the .Net Core 3.1 SDK.
