@@ -16,7 +16,7 @@ Copy `config.example.json` to `config.json` and fill in your account info.
 
 Plaid account access tokens are required for each account/institution that will
 be synchronized. This tool does not provide a UI for linking accounts to Plaid.
-Accounds can be linked using the [Plaid Quickstart tool](https://github.com/plaid/quickstart");
+Accounds can be linked using the [Plaid Quickstart tool](https://github.com/plaid/quickstart);
 copy the access token for each institution into `config.json`.
 
 Please note: the information stored in `config.json` (and the `import-db.sqlite3`
