@@ -14,8 +14,8 @@ namespace firefly_plaid_connector
 
     public class FireflyConfig
     {
-        public string Url { get; set; }
-        public string Token { get; set; }
+        public string url { get; set; }
+        public string token { get; set; }
     }
 
     public class PlaidConfig

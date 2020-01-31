@@ -32,8 +32,8 @@ namespace firefly_plaid_connector
                 Acklann.Plaid.Environment.Development);
             this.firefly = new TransactionsApi(new FireflyIII.Client.Configuration()
             {
-                BasePath = config.firefly.Url,
-                AccessToken = config.firefly.Token,
+                BasePath = config.firefly.url,
+                AccessToken = config.firefly.token,
             });
         }
 
@@ -177,7 +177,7 @@ namespace firefly_plaid_connector
             var name = txn.Name;
             // TODO: fill name with PaymentInfo if non-null
 
-            var transfer = new FireflyIII.Model.TransactionSplit (
+            var transfer = new FireflyIII.Model.TransactionSplit(
                 date: txn.Date,
                 description: txn.Name,
                 amount: Math.Abs(txn.Amount),
@@ -338,17 +338,21 @@ namespace firefly_plaid_connector
 
                             if (others != null && others.Count() > 0)
                             {
-                                if (others.Count() == 1) {
+                                if (others.Count() == 1)
+                                {
                                     // Found exactly one matching txn
                                     Console.WriteLine("Found matching txn pair");
                                     transfer_between_two_plaid_accounts(db, txn, others.First());
                                     continue;
-                                } else {
+                                }
+                                else
+                                {
                                     // Found multiple possible transactions
                                     Console.WriteLine("Found multiple possible transfer pairings; creating single sided txns instead");
                                     // Create the single sided txns here; otherwise, we'll may end up creating a pair from remaining transactions as we continue processing.
                                     sindle_sided_transaction(db, txn);
-                                    foreach (var other in others) {
+                                    foreach (var other in others)
+                                    {
                                         sindle_sided_transaction(db, other);
                                     }
                                     continue;
@@ -398,6 +402,16 @@ namespace firefly_plaid_connector
             public bool ForceSync { get; set; }
         }
 
+        private static bool VerifyConfig(ConnectorConfig config)
+        {
+            return !string.IsNullOrWhiteSpace(config.plaid.client_id) &&
+                !string.IsNullOrWhiteSpace(config.plaid.pubkey) &&
+                !string.IsNullOrWhiteSpace(config.plaid.secret) &&
+                config.plaid.access_tokens.Length > 0 &&
+                !string.IsNullOrWhiteSpace(config.firefly.url) &&
+                !string.IsNullOrWhiteSpace(config.firefly.token);
+        }
+
         static int Main(string[] unparsed_args)
         {
             Args args = Parser.Default.ParseArguments<Args>(unparsed_args)
@@ -428,6 +442,12 @@ namespace firefly_plaid_connector
 
             var config = Toml.ReadFile<ConnectorConfig>(config_path);
             if (config == null)
+            {
+                Console.WriteLine($"Error: invalid config file");
+                return -1;
+            }
+
+            if (!VerifyConfig(config))
             {
                 Console.WriteLine($"Error: invalid config file");
                 return -1;
