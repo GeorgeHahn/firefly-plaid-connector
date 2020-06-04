@@ -5,6 +5,10 @@ The primary goal of this tool is to give good data with low ongoing effort.
 
 You will need a Plaid developer account to use this tool. Sign up [here](https://dashboard.plaid.com/signup?email=) and apply for development access. (This can take a few days.)
 
+![Passively maintained](https://img.shields.io/badge/Maintenance-Passive-Yellow)
+
+This utility is offered in the hope that it will be of use to others. It is passively maintained; I will make a best effort to review and accept submitted MRs, but I am not able to investigate account-specific issues or issues without enough details to be reproduced.
+
 ## Modes of operation
 
 - Batch: run once and exit
