@@ -1,5 +1,7 @@
 # Plaid to Firefly Transaction Importer
 
+**Supports FireflyIII 5.2 or later**
+
 This utility imports transactions from [Plaid](https://plaid.com/) into [Firefly III](https://firefly-iii.org/).
 The primary goal of this tool is to give good data with low ongoing effort.
 
