@@ -43,3 +43,24 @@ build_and_deploy:
     - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:latest --push .
   only:
     - master
+
+build_and_deploy_tags:
+  image: docker:git
+  stage: deploy
+  services:
+    - name: docker:dind
+      command: ["--experimental"]
+  before_script:
+    - mkdir -p $HOME/.docker/cli-plugins
+    - wget -O $HOME/.docker/cli-plugins/docker-buildx $BUILDX_URL
+    - chmod a+x $HOME/.docker/cli-plugins/docker-buildx
+    - "echo -e '{\n  \"experimental\": \"enabled\"\n}' | tee $HOME/.docker/config.json"
+    - docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+    - docker buildx create --use --driver docker-container --name ${BUILDX_BUILDER} --platform ${BUILDX_PLATFORM}
+    - docker buildx inspect --bootstrap ${BUILDX_BUILDER}
+    - docker buildx ls
+  script:
+    - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN registry.gitlab.com
+    - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:$CI_COMMIT_TAG --push .
+  only:
+    - tags
