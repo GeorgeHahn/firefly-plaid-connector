@@ -40,7 +40,6 @@ build_and_deploy:
     - docker buildx ls
   script:
     - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN registry.gitlab.com
-    - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:latest .
-    - docker push registry.gitlab.com/georgehahn/firefly-plaid-connector:latest
+    - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:latest --push .
   only:
     - master
