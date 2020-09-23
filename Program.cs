@@ -453,8 +453,10 @@ namespace firefly_plaid_connector
                 return -1;
             }
 
+            var db_path = System.Environment.GetEnvironmentVariable("DB_PATH") ?? path;
+
             // Create DB if it doesn't exist & run migrations
-            ImportDbContext.database_file = Path.Combine(path, "import-db.sqlite3");
+            ImportDbContext.database_file = Path.Combine(db_path, "import-db.sqlite3");
             using (var db = new ImportDbContext())
             {
                 db.Database.Migrate();
