@@ -172,6 +172,19 @@ namespace firefly_plaid_connector
                 return;
             }
 
+            if (txn.Amount == 0) {
+                Console.WriteLine("Ignoring zero-amount transaction");
+
+                // Record transaction as imported
+                db.Transactions.Add(new ImportedTransaction
+                {
+                    PlaidId = txn.TransactionId,
+                    FireflyId = null,
+                });
+                db.SaveChanges();
+                return;
+            }
+
             var is_source = txn.Amount > 0;
 
             var name = txn.Name;
