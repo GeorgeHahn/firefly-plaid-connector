@@ -25,11 +25,7 @@ namespace firefly_plaid_connector
         {
             this.args = args;
             this.config = config;
-            this.plaid = new PlaidClient(
-                config.plaid.client_id,
-                config.plaid.secret,
-                config.plaid.pubkey,
-                Acklann.Plaid.Environment.Development);
+            this.plaid = new PlaidClient(Acklann.Plaid.Environment.Development);
             this.firefly = new TransactionsApi(new FireflyIII.Client.Configuration()
             {
                 BasePath = config.firefly.url,
@@ -46,6 +42,8 @@ namespace firefly_plaid_connector
                 string itemid = null;
                 var fullinfo = await this.plaid.FetchAccountInfoAsync(new Acklann.Plaid.Auth.GetAccountInfoRequest()
                 {
+                    Secret = config.plaid.secret,
+                    ClientId = config.plaid.client_id,
                     AccessToken = token,
                 });
 
@@ -56,8 +54,10 @@ namespace firefly_plaid_connector
                 }
                 else
                 {
-                    var accts = await this.plaid.FetchAccountAsync(new Acklann.Plaid.Balance.GetAccountRequest()
+                    var accts = await this.plaid.FetchAccountAsync(new Acklann.Plaid.Accounts.GetAccountRequest()
                     {
+                        Secret = config.plaid.secret,
+                        ClientId = config.plaid.client_id,
                         AccessToken = token,
                     });
 
@@ -128,7 +128,7 @@ namespace firefly_plaid_connector
                 date: source.Date,
                 processDate: dest.Date,
                 description: source.Name + " -> " + dest.Name,
-                amount: source.Amount,
+                amount: (double) source.Amount,
                 currencyCode: source.CurrencyCode,
                 externalId: source.TransactionId + " -> " + dest.TransactionId,
                 type: TransactionSplit.TypeEnum.Transfer,
@@ -193,7 +193,7 @@ namespace firefly_plaid_connector
             var transfer = new FireflyIII.Model.TransactionSplit(
                 date: txn.Date,
                 description: txn.Name,
-                amount: Math.Abs(txn.Amount),
+                amount: (double) Math.Abs(txn.Amount),
                 currencyCode: txn.CurrencyCode,
                 externalId: txn.TransactionId,
                 tags: txn.Categories?.ToList()
@@ -285,6 +285,8 @@ namespace firefly_plaid_connector
                         {
                             StartDate = lastpoll.Time,
                             EndDate = now,
+                            Secret = config.plaid.secret,
+                            ClientId = config.plaid.client_id,
                             AccessToken = token,
                             Options = new Acklann.Plaid.Transactions.GetTransactionsRequest.PaginationOptions
                             {
@@ -418,7 +420,6 @@ namespace firefly_plaid_connector
         private static bool VerifyConfig(ConnectorConfig config)
         {
             return !string.IsNullOrWhiteSpace(config.plaid.client_id) &&
-                !string.IsNullOrWhiteSpace(config.plaid.pubkey) &&
                 !string.IsNullOrWhiteSpace(config.plaid.secret) &&
                 config.plaid.access_tokens.Length > 0 &&
                 !string.IsNullOrWhiteSpace(config.firefly.url) &&
