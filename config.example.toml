@@ -14,7 +14,6 @@ max_sync_days = 30
 # Plaid API authentication
 # Note: the plaid environment is currently hardcoded to "development"
 client_id = "<your plaid client id here>"
-pubkey = "<your plaid pubkey here>"
 secret = "<your plaid secret here>"
 
 # List of Plaid access tokens for each institution to sync from
