@@ -1,13 +1,12 @@
 stages:
   - build
-  - deploy
 
 variables:
   BUILDX_URL: https://github.com/docker/buildx/releases/download/v0.5.1/buildx-v0.5.1.linux-amd64
   BUILDX_BUILDER: firefly_builder
   BUILDX_PLATFORM: linux/amd64,linux/arm64
 
-build:
+build_master:
   image: docker:git
   stage: build
   services:
@@ -23,51 +22,73 @@ build:
     - docker buildx inspect --bootstrap ${BUILDX_BUILDER}
     - docker buildx ls
   script:
-    - docker buildx build --platform $BUILDX_PLATFORM -t built-image --output type=oci,dest=- . > image.tar
-  artifacts:
-    paths:
-      - image.tar
-    expire_in: 1 week
-
-deploy_master:
-  image: docker:git
-  stage: deploy
-  services:
-    - name: docker:dind
-      command: ["--experimental"]
-  script:
     - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN registry.gitlab.com
-    - docker image load --input image.tar
-    - docker image tag built-image registry.gitlab.com/georgehahn/firefly-plaid-connector:latest
-    - docker image push registry.gitlab.com/georgehahn/firefly-plaid-connector:latest
+    - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:latest --push .
   only:
     - master
 
-deploy_tags:
+build_tag:
   image: docker:git
-  stage: deploy
+  stage: build
   services:
     - name: docker:dind
       command: ["--experimental"]
+  before_script:
+    - mkdir -p $HOME/.docker/cli-plugins
+    - wget -O $HOME/.docker/cli-plugins/docker-buildx $BUILDX_URL
+    - chmod a+x $HOME/.docker/cli-plugins/docker-buildx
+    - "echo -e '{\n  \"experimental\": \"enabled\"\n}' | tee $HOME/.docker/config.json"
+    - docker run --rm --privileged multiarch/qemu-user-static:4.2.0-7 --reset -p yes
+    - docker buildx create --use --driver docker-container --name ${BUILDX_BUILDER} --platform ${BUILDX_PLATFORM}
+    - docker buildx inspect --bootstrap ${BUILDX_BUILDER}
+    - docker buildx ls
   script:
     - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN registry.gitlab.com
-    - docker image load --input image.tar
-    - docker image tag built-image registry.gitlab.com/georgehahn/firefly-plaid-connector:$CI_COMMIT_TAG
-    - docker image push registry.gitlab.com/georgehahn/firefly-plaid-connector:$CI_COMMIT_TAG
+    - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:CI_COMMIT_TAG --push .
   only:
     - tags
 
-deploy_MRs:
+# Build MRs automatically
+build_MR:
   image: docker:git
-  stage: deploy
+  stage: build
   services:
     - name: docker:dind
       command: ["--experimental"]
+  before_script:
+    - mkdir -p $HOME/.docker/cli-plugins
+    - wget -O $HOME/.docker/cli-plugins/docker-buildx $BUILDX_URL
+    - chmod a+x $HOME/.docker/cli-plugins/docker-buildx
+    - "echo -e '{\n  \"experimental\": \"enabled\"\n}' | tee $HOME/.docker/config.json"
+    - docker run --rm --privileged multiarch/qemu-user-static:4.2.0-7 --reset -p yes
+    - docker buildx create --use --driver docker-container --name ${BUILDX_BUILDER} --platform ${BUILDX_PLATFORM}
+    - docker buildx inspect --bootstrap ${BUILDX_BUILDER}
+    - docker buildx ls
+  script:
+    - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:MR-${CI_MERGE_REQUEST_IID}-${CI_COMMIT_REF_SLUG} .
+  except:
+    - master
+    - tags
+
+# Push MRs when manually authorized. This has to rebuild the container due to multiplat limitations in docker buildx.
+build_and_push_MR:
+  image: docker:git
+  stage: build
+  services:
+    - name: docker:dind
+      command: ["--experimental"]
+  before_script:
+    - mkdir -p $HOME/.docker/cli-plugins
+    - wget -O $HOME/.docker/cli-plugins/docker-buildx $BUILDX_URL
+    - chmod a+x $HOME/.docker/cli-plugins/docker-buildx
+    - "echo -e '{\n  \"experimental\": \"enabled\"\n}' | tee $HOME/.docker/config.json"
+    - docker run --rm --privileged multiarch/qemu-user-static:4.2.0-7 --reset -p yes
+    - docker buildx create --use --driver docker-container --name ${BUILDX_BUILDER} --platform ${BUILDX_PLATFORM}
+    - docker buildx inspect --bootstrap ${BUILDX_BUILDER}
+    - docker buildx ls
   script:
     - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN registry.gitlab.com
-    - docker image load --input image.tar
-    - docker image tag built-image registry.gitlab.com/georgehahn/firefly-plaid-connector:MR-${CI_MERGE_REQUEST_IID}-${CI_COMMIT_REF_SLUG}
-    - docker image push registry.gitlab.com/georgehahn/firefly-plaid-connector:MR-${CI_MERGE_REQUEST_IID}-${CI_COMMIT_REF_SLUG}
+    - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:MR-${CI_MERGE_REQUEST_IID}-${CI_COMMIT_REF_SLUG} --push .
   when: manual
   except:
     - master
