@@ -23,7 +23,7 @@ build:
     - docker buildx inspect --bootstrap ${BUILDX_BUILDER}
     - docker buildx ls
   script:
-    - docker buildx build --platform $BUILDX_PLATFORM -t built-image --output type=docker,dest=- . > image.tar
+    - docker buildx build --platform $BUILDX_PLATFORM -t built-image --output - . > image.tar
   artifacts:
     paths:
       - image.tar
