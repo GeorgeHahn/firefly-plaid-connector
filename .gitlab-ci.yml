@@ -44,7 +44,7 @@ build_tag:
     - docker buildx ls
   script:
     - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN registry.gitlab.com
-    - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:CI_COMMIT_TAG --push .
+    - docker buildx build --platform $BUILDX_PLATFORM -t registry.gitlab.com/georgehahn/firefly-plaid-connector:${CI_COMMIT_TAG} --push .
   only:
     - tags
 
