@@ -353,9 +353,10 @@ namespace firefly_plaid_connector
 
                             if (others != null && others.Count() > 0)
                             {
-                                if (others.Count() == 1)
+                                if (others.Count() == 1 &&
+                                    others.First().AccountId != txn.AccountId)
                                 {
-                                    // Found exactly one matching txn
+                                    // Found exactly one matching txn between two different accounts
                                     Console.WriteLine("Found matching txn pair");
                                     transfer_between_two_plaid_accounts(db, txn, others.First());
                                     continue;
