@@ -21,7 +21,6 @@ namespace firefly_plaid_connector
     public class PlaidConfig
     {
         public string client_id { get; set; }
-        public string pubkey { get; set; }
         public string secret { get; set; }
         public string[] access_tokens { get; set; }
     }
