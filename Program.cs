@@ -348,14 +348,15 @@ namespace firefly_plaid_connector
                                 ((t.CategoryId == "21005000" && txn.CategoryId == "21006000") ||
                                 (t.CategoryId == "21006000" && txn.CategoryId == "21005000") ||
                                 (t.CategoryId == "16001000" && txn.CategoryId == "21009000") ||
-                                (t.CategoryId == "21009000" && txn.CategoryId == "16001000"))
+                                (t.CategoryId == "21009000" && txn.CategoryId == "16001000") ||
+                                (t.AccountId != txn.AccountId))
                             );
 
                             if (others != null && others.Count() > 0)
                             {
                                 if (others.Count() == 1)
                                 {
-                                    // Found exactly one matching txn
+                                    // Found exactly one matching txn between two different accounts
                                     Console.WriteLine("Found matching txn pair");
                                     transfer_between_two_plaid_accounts(db, txn, others.First());
                                     continue;
