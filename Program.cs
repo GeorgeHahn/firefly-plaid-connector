@@ -153,7 +153,7 @@ namespace firefly_plaid_connector
             db.SaveChanges();
         }
 
-        private void sindle_sided_transaction(ImportDbContext db, Acklann.Plaid.Entity.Transaction txn)
+        private void single_sided_transaction(ImportDbContext db, Acklann.Plaid.Entity.Transaction txn)
         {
             Console.WriteLine("Creating single sided transaction");
 
@@ -366,10 +366,10 @@ namespace firefly_plaid_connector
                                     // Found multiple possible transactions
                                     Console.WriteLine("Found multiple possible transfer pairings; creating single sided txns instead");
                                     // Create the single sided txns here; otherwise, we'll may end up creating a pair from remaining transactions as we continue processing.
-                                    sindle_sided_transaction(db, txn);
+                                    single_sided_transaction(db, txn);
                                     foreach (var other in others)
                                     {
-                                        sindle_sided_transaction(db, other);
+                                        single_sided_transaction(db, other);
                                     }
                                     continue;
                                 }
@@ -377,7 +377,7 @@ namespace firefly_plaid_connector
                         }
 
                         // Did not find a matching txn: create single sided FF3 transaction
-                        sindle_sided_transaction(db, txn);
+                        single_sided_transaction(db, txn);
                     }
                 }
 
