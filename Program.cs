@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
@@ -128,7 +128,7 @@ namespace firefly_plaid_connector
                 date: source.Date,
                 processDate: dest.Date,
                 description: source.Name + " -> " + dest.Name,
-                amount: (double) source.Amount,
+                amount: (double)source.Amount,
                 currencyCode: source.CurrencyCode,
                 externalId: source.TransactionId + " -> " + dest.TransactionId,
                 type: TransactionSplit.TypeEnum.Transfer,
@@ -172,7 +172,8 @@ namespace firefly_plaid_connector
                 return;
             }
 
-            if (txn.Amount == 0) {
+            if (txn.Amount == 0)
+            {
                 Console.WriteLine("Ignoring zero-amount transaction");
 
                 // Record transaction as imported
@@ -193,7 +194,7 @@ namespace firefly_plaid_connector
             var transfer = new FireflyIII.Model.TransactionSplit(
                 date: txn.Date,
                 description: txn.Name,
-                amount: (double) Math.Abs(txn.Amount),
+                amount: (double)Math.Abs(txn.Amount),
                 currencyCode: txn.CurrencyCode,
                 externalId: txn.TransactionId,
                 tags: txn.Categories?.ToList()
