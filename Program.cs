@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
@@ -214,6 +214,15 @@ namespace firefly_plaid_connector
             }
 
             var storedtransfer = firefly.StoreTransaction(new FireflyIII.Model.Transaction(new[] { transfer }.ToList()));
+
+            if (storedtransfer == null || storedtransfer.Data == null)
+            {
+                Console.WriteLine($"failed to store single_sided_transaction");
+                Console.WriteLine($"txn: {txn.Name}, {txn.Date}, {txn.Amount} {txn.CurrencyCode}, {txn.TransactionId}");
+                Console.WriteLine($"transfer: {transfer}");
+                Console.WriteLine($"storedtransfer: {storedtransfer}");
+                throw new ApplicationException("failed to store transaction with firefly-iii");
+            }
 
             // Record transaction as imported
             db.Transactions.Add(new ImportedTransaction
