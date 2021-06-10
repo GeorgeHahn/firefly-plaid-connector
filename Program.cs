@@ -189,6 +189,11 @@ namespace firefly_plaid_connector
             var is_source = txn.Amount > 0;
 
             var name = txn.Name;
+            if (name.Length > 255)
+            {
+                Console.WriteLine($"Transaction name was {name.Length} characters long. Truncating to FF3's 255 character limit.");
+                name = name.Substring(0, 255);
+            }
             // TODO: fill name with PaymentInfo if non-null
 
             var transfer = new FireflyIII.Model.TransactionSplit(
