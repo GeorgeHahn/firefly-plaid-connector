@@ -128,7 +128,7 @@ namespace firefly_plaid_connector
                 date: source.Date,
                 processDate: dest.Date,
                 description: source.Name + " -> " + dest.Name,
-                amount: (double) source.Amount,
+                amount: (double)source.Amount,
                 currencyCode: source.CurrencyCode,
                 externalId: source.TransactionId + " -> " + dest.TransactionId,
                 type: TransactionSplit.TypeEnum.Transfer,
@@ -153,7 +153,7 @@ namespace firefly_plaid_connector
             db.SaveChanges();
         }
 
-        private void sindle_sided_transaction(ImportDbContext db, Acklann.Plaid.Entity.Transaction txn)
+        private void single_sided_transaction(ImportDbContext db, Acklann.Plaid.Entity.Transaction txn)
         {
             Console.WriteLine("Creating single sided transaction");
 
@@ -172,7 +172,8 @@ namespace firefly_plaid_connector
                 return;
             }
 
-            if (txn.Amount == 0) {
+            if (txn.Amount == 0)
+            {
                 Console.WriteLine("Ignoring zero-amount transaction");
 
                 // Record transaction as imported
@@ -188,12 +189,17 @@ namespace firefly_plaid_connector
             var is_source = txn.Amount > 0;
 
             var name = txn.Name;
+            if (name.Length > 255)
+            {
+                Console.WriteLine($"Transaction name was {name.Length} characters long. Truncating to FF3's 255 character limit.");
+                name = name.Substring(0, 255);
+            }
             // TODO: fill name with PaymentInfo if non-null
 
             var transfer = new FireflyIII.Model.TransactionSplit(
                 date: txn.Date,
                 description: txn.Name,
-                amount: (double) Math.Abs(txn.Amount),
+                amount: (double)Math.Abs(txn.Amount),
                 currencyCode: txn.CurrencyCode,
                 externalId: txn.TransactionId,
                 tags: txn.Categories?.ToList()
@@ -213,6 +219,15 @@ namespace firefly_plaid_connector
             }
 
             var storedtransfer = firefly.StoreTransaction(new FireflyIII.Model.Transaction(new[] { transfer }.ToList()));
+
+            if (storedtransfer == null || storedtransfer.Data == null)
+            {
+                Console.WriteLine($"failed to store single_sided_transaction");
+                Console.WriteLine($"txn: {txn.Name}, {txn.Date}, {txn.Amount} {txn.CurrencyCode}, {txn.TransactionId}");
+                Console.WriteLine($"transfer: {transfer}");
+                Console.WriteLine($"storedtransfer: {storedtransfer}");
+                throw new ApplicationException("failed to store transaction with firefly-iii");
+            }
 
             // Record transaction as imported
             db.Transactions.Add(new ImportedTransaction
@@ -366,10 +381,10 @@ namespace firefly_plaid_connector
                                     // Found multiple possible transactions
                                     Console.WriteLine("Found multiple possible transfer pairings; creating single sided txns instead");
                                     // Create the single sided txns here; otherwise, we'll may end up creating a pair from remaining transactions as we continue processing.
-                                    sindle_sided_transaction(db, txn);
+                                    single_sided_transaction(db, txn);
                                     foreach (var other in others)
                                     {
-                                        sindle_sided_transaction(db, other);
+                                        single_sided_transaction(db, other);
                                     }
                                     continue;
                                 }
@@ -377,7 +392,7 @@ namespace firefly_plaid_connector
                         }
 
                         // Did not find a matching txn: create single sided FF3 transaction
-                        sindle_sided_transaction(db, txn);
+                        single_sided_transaction(db, txn);
                     }
                 }
 
